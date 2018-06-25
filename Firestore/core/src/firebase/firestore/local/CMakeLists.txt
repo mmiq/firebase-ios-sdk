@@ -12,6 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+if(LEVELDB_FOUND)
+  set(LEVELDB_LIBRARY_TARGET "LevelDB::LevelDB")
+else()
+  set(LEVELDB_LIBRARY_TARGET "")
+endif()
+
 cc_library(
   firebase_firestore_local
   SOURCES
@@ -22,7 +28,7 @@ cc_library(
     local_serializer.h
     local_serializer.cc
   DEPENDS
-    LevelDB::LevelDB
+    ${LEVELDB_LIBRARY_TARGET}
     absl_strings
     firebase_firestore_model
     firebase_firestore_nanopb

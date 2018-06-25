@@ -79,7 +79,7 @@ include(utils)
 
 find_package(GTest REQUIRED)
 find_package(GMock REQUIRED)
-find_package(LevelDB REQUIRED)
+find_package(LevelDB)
 find_package(Nanopb REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(GRPC REQUIRED)
