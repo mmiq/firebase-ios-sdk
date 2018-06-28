@@ -14,6 +14,10 @@
 
 include(ExternalProject)
 
+if(OPENSSL_ROOT_DIR)
+  set(OPENSSL_ROOT_DIR_ARG -DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR})
+endif()
+
 ExternalProject_Add(
   Firestore
   DEPENDS
@@ -35,6 +39,7 @@ ExternalProject_Add(
     -DWITH_ASAN:BOOL=${WITH_ASAN}
     -DWITH_TSAN:BOOL=${WITH_TSAN}
     -DWITH_UBSAN:BOOL=${WITH_UBSAN}
+    ${OPENSSL_ROOT_DIR_ARG}
 
   BUILD_ALWAYS ON
 

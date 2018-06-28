@@ -21,9 +21,13 @@ if(GRPC_ROOT)
   add_custom_target(grpc)
 
 else()
+  # Include these submodules to stop gRPC's build from complaining that they're
+  # missing. Also, ensure that there's at least one submodule here otherwise
+  # CMake will download all of them.
   set(
     GIT_SUBMODULES
-    third_party/boringssl
+    third_party/benchmark
+    third_party/gflags
   )
 
   set(
@@ -43,6 +47,32 @@ else()
     -DCMAKE_C_FLAGS=-DPB_FIELD_16BIT
     -DCMAKE_CXX_FLAGS=-DPB_FIELD_16BIT
   )
+
+
+  ## BoringSSL/OpenSSL
+
+  # gRPC supports compiling with an outboard OpenSSL or compiling against a
+  # built-in BoringSSL. Unfortunately, BoringSSL does not support installation
+  # so downstream projects that need gRPC also need to handle this.
+
+  find_package(OpenSSL)
+  if(OPENSSL_FOUND)
+    list(
+      APPEND CMAKE_ARGS
+      -DgRPC_SSL_PROVIDER:STRING=package
+
+      # gRPC's CMakeLists.txt does not account for finding OpenSSL in a
+      # directory that's not in the default search path.
+      -DCMAKE_CXX_FLAGS=-I${OPENSSL_INCLUDE_DIR}
+    )
+
+    if(DEFINED OPENSSL_ROOT_DIR)
+      list(APPEND CMAKE_ARGS "-DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}")
+    endif()
+
+  else()
+    list(APPEND GRPC_GIT_SUBMODULES third_party/boringssl)
+  endif()
 
 
   ## c-ares
