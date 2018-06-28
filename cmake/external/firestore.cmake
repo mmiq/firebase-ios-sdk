@@ -22,9 +22,10 @@ ExternalProject_Add(
   Firestore
   DEPENDS
     FirebaseCore
+    abseil-cpp
     googletest
-    leveldb
     grpc
+    leveldb
     nanopb
 
   # Lay the binary directory out as if this were a subproject. This makes it
