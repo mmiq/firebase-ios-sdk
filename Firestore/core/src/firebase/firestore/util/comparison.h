@@ -180,7 +180,7 @@ bool DoubleBitwiseEquals(double left, double right);
  */
 size_t DoubleBitwiseHash(double d);
 
-template<typename T>
+template <typename T>
 class Equatable {
  public:
   friend bool operator!=(const T& lhs, const T& rhs) {
@@ -188,7 +188,7 @@ class Equatable {
   }
 };
 
-template<typename T>
+template <typename T>
 class Comparable : public Equatable<T> {
  public:
   friend bool operator>(const T& lhs, const T& rhs) {

@@ -21,6 +21,7 @@
 
 #include <cstdlib>
 #include <functional>
+#include <string>
 #include <utility>
 
 #include "Firestore/core/src/firebase/firestore/util/comparison.h"
@@ -60,12 +61,10 @@ class String : public util::Comparable<String> {
   }
 
   String(const String& other)
-    : bytes_{MakeBytesArray(absl::string_view{other})} {
-
+      : bytes_{MakeBytesArray(absl::string_view{other})} {
   }
 
-  String(String&& other) noexcept
-    : String{} {
+  String(String&& other) noexcept : String{} {
     swap(*this, other);
   }
 
@@ -105,7 +104,8 @@ class String : public util::Comparable<String> {
   }
 
   friend bool operator==(const String& lhs, absl::string_view rhs) {
-    return absl::string_view{lhs} == rhs;
+    absl::string_view lhs_view{lhs};
+    return lhs_view == rhs;
   }
   friend bool operator!=(const String& lhs, absl::string_view rhs) {
     return !(lhs == rhs);
@@ -113,7 +113,6 @@ class String : public util::Comparable<String> {
 
  private:
   pb_bytes_array_t* bytes_ = nullptr;
-
 };  // namespace nanopb
 
 }  // namespace nanopb
