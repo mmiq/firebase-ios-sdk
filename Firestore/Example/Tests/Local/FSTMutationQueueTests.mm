@@ -19,9 +19,9 @@
 #import <FirebaseFirestore/FIRTimestamp.h>
 
 #include <set>
+#include <vector>
 
 #import "Firestore/Source/Core/FSTQuery.h"
-#import "Firestore/Source/Local/FSTMutationQueue.h"
 #import "Firestore/Source/Local/FSTPersistence.h"
 #import "Firestore/Source/Model/FSTMutation.h"
 #import "Firestore/Source/Model/FSTMutationBatch.h"
@@ -31,12 +31,14 @@
 #include "Firestore/core/src/firebase/firestore/auth/user.h"
 #include "Firestore/core/src/firebase/firestore/model/document_key.h"
 #include "Firestore/core/src/firebase/firestore/model/document_key_set.h"
+#include "Firestore/core/src/firebase/firestore/model/mutation_batch.h"
 #include "Firestore/core/test/firebase/firestore/testutil/testutil.h"
 
 namespace testutil = firebase::firestore::testutil;
 using firebase::firestore::auth::User;
 using firebase::firestore::model::DocumentKey;
 using firebase::firestore::model::DocumentKeySet;
+using firebase::firestore::model::kBatchIdUnknown;
 using firebase::firestore::testutil::Key;
 
 NS_ASSUME_NONNULL_BEGIN
@@ -46,6 +48,14 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tearDown {
   [self.persistence shutdown];
   [super tearDown];
+}
+
+- (void)assertVector:(const std::vector<FSTMutationBatch *> &)actual
+     matchesExpected:(const std::vector<FSTMutationBatch *> &)expected {
+  XCTAssertEqual(actual.size(), expected.size(), @"Vector length mismatch");
+  for (int i = 0; i < expected.size(); i++) {
+    XCTAssertEqualObjects(actual[i], expected[i]);
+  }
 }
 
 /**
@@ -62,54 +72,51 @@ NS_ASSUME_NONNULL_BEGIN
 
   self.persistence.run("testCountBatches", [&]() {
     XCTAssertEqual(0, [self batchCount]);
-    XCTAssertTrue([self.mutationQueue isEmpty]);
+    XCTAssertTrue(self.mutationQueue->IsEmpty());
 
     FSTMutationBatch *batch1 = [self addMutationBatch];
     XCTAssertEqual(1, [self batchCount]);
-    XCTAssertFalse([self.mutationQueue isEmpty]);
+    XCTAssertFalse(self.mutationQueue->IsEmpty());
 
     FSTMutationBatch *batch2 = [self addMutationBatch];
     XCTAssertEqual(2, [self batchCount]);
 
-    [self.mutationQueue removeMutationBatches:@[ batch2 ]];
+    self.mutationQueue->RemoveMutationBatch(batch1);
     XCTAssertEqual(1, [self batchCount]);
 
-    [self.mutationQueue removeMutationBatches:@[ batch1 ]];
+    self.mutationQueue->RemoveMutationBatch(batch2);
     XCTAssertEqual(0, [self batchCount]);
-    XCTAssertTrue([self.mutationQueue isEmpty]);
+    XCTAssertTrue(self.mutationQueue->IsEmpty());
   });
 }
 
 - (void)testAcknowledgeBatchID {
   if ([self isTestBaseClass]) return;
 
-  // Initial state of an empty queue
-  XCTAssertEqual([self.mutationQueue highestAcknowledgedBatchID], kFSTBatchIDUnknown);
-
-  // Adding mutation batches should not change the highest acked batchID.
   self.persistence.run("testAcknowledgeBatchID", [&]() {
+    XCTAssertEqual([self batchCount], 0);
+
     FSTMutationBatch *batch1 = [self addMutationBatch];
     FSTMutationBatch *batch2 = [self addMutationBatch];
     FSTMutationBatch *batch3 = [self addMutationBatch];
-    XCTAssertGreaterThan(batch1.batchID, kFSTBatchIDUnknown);
+    XCTAssertGreaterThan(batch1.batchID, kBatchIdUnknown);
     XCTAssertGreaterThan(batch2.batchID, batch1.batchID);
     XCTAssertGreaterThan(batch3.batchID, batch2.batchID);
 
-    XCTAssertEqual([self.mutationQueue highestAcknowledgedBatchID], kFSTBatchIDUnknown);
+    XCTAssertEqual([self batchCount], 3);
 
-    [self.mutationQueue acknowledgeBatch:batch1 streamToken:nil];
-    [self.mutationQueue acknowledgeBatch:batch2 streamToken:nil];
-    XCTAssertEqual([self.mutationQueue highestAcknowledgedBatchID], batch2.batchID);
+    self.mutationQueue->AcknowledgeBatch(batch1, nil);
+    self.mutationQueue->RemoveMutationBatch(batch1);
+    XCTAssertEqual([self batchCount], 2);
 
-    [self.mutationQueue removeMutationBatches:@[ batch1 ]];
-    XCTAssertEqual([self.mutationQueue highestAcknowledgedBatchID], batch2.batchID);
+    self.mutationQueue->AcknowledgeBatch(batch2, nil);
+    XCTAssertEqual([self batchCount], 2);
 
-    [self.mutationQueue removeMutationBatches:@[ batch2 ]];
-    XCTAssertEqual([self.mutationQueue highestAcknowledgedBatchID], batch2.batchID);
+    self.mutationQueue->RemoveMutationBatch(batch2);
+    XCTAssertEqual([self batchCount], 1);
 
-    // Batch 3 never acknowledged.
-    [self.mutationQueue removeMutationBatches:@[ batch3 ]];
-    XCTAssertEqual([self.mutationQueue highestAcknowledgedBatchID], batch2.batchID);
+    self.mutationQueue->RemoveMutationBatch(batch3);
+    XCTAssertEqual([self batchCount], 0);
   });
 }
 
@@ -119,60 +126,10 @@ NS_ASSUME_NONNULL_BEGIN
   self.persistence.run("testAcknowledgeThenRemove", [&]() {
     FSTMutationBatch *batch1 = [self addMutationBatch];
 
-    [self.mutationQueue acknowledgeBatch:batch1 streamToken:nil];
-    [self.mutationQueue removeMutationBatches:@[ batch1 ]];
+    self.mutationQueue->AcknowledgeBatch(batch1, nil);
+    self.mutationQueue->RemoveMutationBatch(batch1);
 
     XCTAssertEqual([self batchCount], 0);
-    XCTAssertEqual([self.mutationQueue highestAcknowledgedBatchID], batch1.batchID);
-  });
-}
-
-- (void)testHighestAcknowledgedBatchIDNeverExceedsNextBatchID {
-  if ([self isTestBaseClass]) return;
-
-  FSTMutationBatch *batch1 =
-      self.persistence.run("testHighestAcknowledgedBatchIDNeverExceedsNextBatchID batch1",
-                           [&]() -> FSTMutationBatch * { return [self addMutationBatch]; });
-  FSTMutationBatch *batch2 =
-      self.persistence.run("testHighestAcknowledgedBatchIDNeverExceedsNextBatchID batch2",
-                           [&]() -> FSTMutationBatch * { return [self addMutationBatch]; });
-
-  self.persistence.run("testHighestAcknowledgedBatchIDNeverExceedsNextBatchID", [&]() {
-    [self.mutationQueue acknowledgeBatch:batch1 streamToken:nil];
-    [self.mutationQueue acknowledgeBatch:batch2 streamToken:nil];
-    XCTAssertEqual([self.mutationQueue highestAcknowledgedBatchID], batch2.batchID);
-
-    [self.mutationQueue removeMutationBatches:@[ batch1, batch2 ]];
-    XCTAssertEqual([self.mutationQueue highestAcknowledgedBatchID], batch2.batchID);
-  });
-
-  // Restart the queue so that nextBatchID will be reset.
-  FSTMutationBatch *batch = self.persistence.run(
-      "testHighestAcknowledgedBatchIDNeverExceedsNextBatchID restart", [&]() -> FSTMutationBatch * {
-        self.mutationQueue = [self.persistence mutationQueueForUser:User("user")];
-
-        [self.mutationQueue start];
-
-        // Verify that on restart with an empty queue, nextBatchID falls to a lower value.
-        XCTAssertLessThan(self.mutationQueue.nextBatchID, batch2.batchID);
-
-        // As a result highestAcknowledgedBatchID must also reset lower.
-        XCTAssertEqual([self.mutationQueue highestAcknowledgedBatchID], kFSTBatchIDUnknown);
-
-        // The mutation queue will reset the next batchID after all mutations are removed so adding
-        // another mutation will cause a collision.
-        FSTMutationBatch *newBatch = [self addMutationBatch];
-        XCTAssertEqual(newBatch.batchID, batch1.batchID);
-        return newBatch;
-      });
-  self.persistence.run("testHighestAcknowledgedBatchIDNeverExceedsNextBatchID restart2", [&]() {
-    // Restart the queue with one unacknowledged batch in it.
-    [self.mutationQueue start];
-
-    XCTAssertEqual([self.mutationQueue nextBatchID], batch.batchID + 1);
-
-    // highestAcknowledgedBatchID must still be kFSTBatchIDUnknown.
-    XCTAssertEqual([self.mutationQueue highestAcknowledgedBatchID], kFSTBatchIDUnknown);
   });
 }
 
@@ -181,26 +138,26 @@ NS_ASSUME_NONNULL_BEGIN
 
   // Searching on an empty queue should not find a non-existent batch
   self.persistence.run("testLookupMutationBatch", [&]() {
-    FSTMutationBatch *notFound = [self.mutationQueue lookupMutationBatch:42];
+    FSTMutationBatch *notFound = self.mutationQueue->LookupMutationBatch(42);
     XCTAssertNil(notFound);
 
-    NSMutableArray<FSTMutationBatch *> *batches = [self createBatches:10];
-    NSArray<FSTMutationBatch *> *removed = [self makeHoles:@[ @2, @6, @7 ] inBatches:batches];
+    std::vector<FSTMutationBatch *> batches = [self createBatches:10];
+    std::vector<FSTMutationBatch *> removed = [self removeFirstBatches:3 inBatches:&batches];
 
     // After removing, a batch should not be found
-    for (NSUInteger i = 0; i < removed.count; i++) {
-      notFound = [self.mutationQueue lookupMutationBatch:removed[i].batchID];
+    for (size_t i = 0; i < removed.size(); i++) {
+      notFound = self.mutationQueue->LookupMutationBatch(removed[i].batchID);
       XCTAssertNil(notFound);
     }
 
     // Remaining entries should still be found
-    for (FSTMutationBatch *batch in batches) {
-      FSTMutationBatch *found = [self.mutationQueue lookupMutationBatch:batch.batchID];
+    for (FSTMutationBatch *batch : batches) {
+      FSTMutationBatch *found = self.mutationQueue->LookupMutationBatch(batch.batchID);
       XCTAssertEqual(found.batchID, batch.batchID);
     }
 
     // Even on a nonempty queue searching should not find a non-existent batch
-    notFound = [self.mutationQueue lookupMutationBatch:42];
+    notFound = self.mutationQueue->LookupMutationBatch(42);
     XCTAssertNil(notFound);
   });
 }
@@ -209,75 +166,30 @@ NS_ASSUME_NONNULL_BEGIN
   if ([self isTestBaseClass]) return;
 
   self.persistence.run("testNextMutationBatchAfterBatchID", [&]() {
-    NSMutableArray<FSTMutationBatch *> *batches = [self createBatches:10];
+    std::vector<FSTMutationBatch *> batches = [self createBatches:10];
+    std::vector<FSTMutationBatch *> removed = [self removeFirstBatches:3 inBatches:&batches];
 
-    // This is an array of successors assuming the removals below will happen:
-    NSArray<FSTMutationBatch *> *afters = @[ batches[3], batches[8], batches[8] ];
-    NSArray<FSTMutationBatch *> *removed = [self makeHoles:@[ @2, @6, @7 ] inBatches:batches];
-
-    for (NSUInteger i = 0; i < batches.count - 1; i++) {
+    for (size_t i = 0; i < batches.size() - 1; i++) {
       FSTMutationBatch *current = batches[i];
       FSTMutationBatch *next = batches[i + 1];
-      FSTMutationBatch *found = [self.mutationQueue nextMutationBatchAfterBatchID:current.batchID];
+      FSTMutationBatch *found = self.mutationQueue->NextMutationBatchAfterBatchId(current.batchID);
       XCTAssertEqual(found.batchID, next.batchID);
     }
 
-    for (NSUInteger i = 0; i < removed.count; i++) {
+    for (size_t i = 0; i < removed.size(); i++) {
       FSTMutationBatch *current = removed[i];
-      FSTMutationBatch *next = afters[i];
-      FSTMutationBatch *found = [self.mutationQueue nextMutationBatchAfterBatchID:current.batchID];
+      FSTMutationBatch *next = batches[0];
+      FSTMutationBatch *found = self.mutationQueue->NextMutationBatchAfterBatchId(current.batchID);
       XCTAssertEqual(found.batchID, next.batchID);
     }
 
     FSTMutationBatch *first = batches[0];
-    FSTMutationBatch *found = [self.mutationQueue nextMutationBatchAfterBatchID:first.batchID - 42];
+    FSTMutationBatch *found = self.mutationQueue->NextMutationBatchAfterBatchId(first.batchID - 42);
     XCTAssertEqual(found.batchID, first.batchID);
 
-    FSTMutationBatch *last = batches[batches.count - 1];
-    FSTMutationBatch *notFound = [self.mutationQueue nextMutationBatchAfterBatchID:last.batchID];
+    FSTMutationBatch *last = batches[batches.size() - 1];
+    FSTMutationBatch *notFound = self.mutationQueue->NextMutationBatchAfterBatchId(last.batchID);
     XCTAssertNil(notFound);
-  });
-}
-
-- (void)testNextMutationBatchAfterBatchIDSkipsAcknowledgedBatches {
-  if ([self isTestBaseClass]) return;
-
-  NSMutableArray<FSTMutationBatch *> *batches = self.persistence.run(
-      "testNextMutationBatchAfterBatchIDSkipsAcknowledgedBatches newBatches",
-      [&]() -> NSMutableArray<FSTMutationBatch *> * {
-        NSMutableArray<FSTMutationBatch *> *newBatches = [self createBatches:3];
-        XCTAssertEqualObjects([self.mutationQueue nextMutationBatchAfterBatchID:kFSTBatchIDUnknown],
-                              newBatches[0]);
-        return newBatches;
-      });
-  self.persistence.run("testNextMutationBatchAfterBatchIDSkipsAcknowledgedBatches", [&]() {
-    [self.mutationQueue acknowledgeBatch:batches[0] streamToken:nil];
-    XCTAssertEqualObjects([self.mutationQueue nextMutationBatchAfterBatchID:kFSTBatchIDUnknown],
-                          batches[1]);
-    XCTAssertEqualObjects([self.mutationQueue nextMutationBatchAfterBatchID:batches[0].batchID],
-                          batches[1]);
-    XCTAssertEqualObjects([self.mutationQueue nextMutationBatchAfterBatchID:batches[1].batchID],
-                          batches[2]);
-  });
-}
-
-- (void)testAllMutationBatchesThroughBatchID {
-  if ([self isTestBaseClass]) return;
-
-  self.persistence.run("testAllMutationBatchesThroughBatchID", [&]() {
-    NSMutableArray<FSTMutationBatch *> *batches = [self createBatches:10];
-    [self makeHoles:@[ @2, @6, @7 ] inBatches:batches];
-
-    NSArray<FSTMutationBatch *> *found, *expected;
-
-    found = [self.mutationQueue allMutationBatchesThroughBatchID:batches[0].batchID - 1];
-    XCTAssertEqualObjects(found, (@[]));
-
-    for (NSUInteger i = 0; i < batches.count; i++) {
-      found = [self.mutationQueue allMutationBatchesThroughBatchID:batches[i].batchID];
-      expected = [batches subarrayWithRange:NSMakeRange(0, i + 1)];
-      XCTAssertEqualObjects(found, expected, @"for index %lu", (unsigned long)i);
-    }
   });
 }
 
@@ -286,34 +198,25 @@ NS_ASSUME_NONNULL_BEGIN
 
   self.persistence.run("testAllMutationBatchesAffectingDocumentKey", [&]() {
     NSArray<FSTMutation *> *mutations = @[
-      FSTTestSetMutation(@"foi/bar",
-                         @{@"a" : @1}),
-      FSTTestSetMutation(@"foo/bar",
-                         @{@"a" : @1}),
-      FSTTestPatchMutation("foo/bar",
-                           @{@"b" : @1}, {}),
-      FSTTestSetMutation(@"foo/bar/suffix/key",
-                         @{@"a" : @1}),
-      FSTTestSetMutation(@"foo/baz",
-                         @{@"a" : @1}),
-      FSTTestSetMutation(@"food/bar",
-                         @{@"a" : @1})
+      FSTTestSetMutation(@"foi/bar", @{@"a" : @1}), FSTTestSetMutation(@"foo/bar", @{@"a" : @1}),
+      FSTTestPatchMutation("foo/bar", @{@"b" : @1}, {}),
+      FSTTestSetMutation(@"foo/bar/suffix/key", @{@"a" : @1}),
+      FSTTestSetMutation(@"foo/baz", @{@"a" : @1}), FSTTestSetMutation(@"food/bar", @{@"a" : @1})
     ];
 
     // Store all the mutations.
     NSMutableArray<FSTMutationBatch *> *batches = [NSMutableArray array];
     for (FSTMutation *mutation in mutations) {
       FSTMutationBatch *batch =
-          [self.mutationQueue addMutationBatchWithWriteTime:[FIRTimestamp timestamp]
-                                                  mutations:@[ mutation ]];
+          self.mutationQueue->AddMutationBatch([FIRTimestamp timestamp], @[ mutation ]);
       [batches addObject:batch];
     }
 
-    NSArray<FSTMutationBatch *> *expected = @[ batches[1], batches[2] ];
-    NSArray<FSTMutationBatch *> *matches =
-        [self.mutationQueue allMutationBatchesAffectingDocumentKey:testutil::Key("foo/bar")];
+    std::vector<FSTMutationBatch *> expected{batches[1], batches[2]};
+    std::vector<FSTMutationBatch *> matches =
+        self.mutationQueue->AllMutationBatchesAffectingDocumentKey(testutil::Key("foo/bar"));
 
-    XCTAssertEqualObjects(matches, expected);
+    [self assertVector:matches matchesExpected:expected];
   });
 }
 
@@ -322,26 +225,17 @@ NS_ASSUME_NONNULL_BEGIN
 
   self.persistence.run("testAllMutationBatchesAffectingDocumentKey", [&]() {
     NSArray<FSTMutation *> *mutations = @[
-      FSTTestSetMutation(@"fob/bar",
-                         @{@"a" : @1}),
-      FSTTestSetMutation(@"foo/bar",
-                         @{@"a" : @1}),
-      FSTTestPatchMutation("foo/bar",
-                           @{@"b" : @1}, {}),
-      FSTTestSetMutation(@"foo/bar/suffix/key",
-                         @{@"a" : @1}),
-      FSTTestSetMutation(@"foo/baz",
-                         @{@"a" : @1}),
-      FSTTestSetMutation(@"food/bar",
-                         @{@"a" : @1})
+      FSTTestSetMutation(@"fob/bar", @{@"a" : @1}), FSTTestSetMutation(@"foo/bar", @{@"a" : @1}),
+      FSTTestPatchMutation("foo/bar", @{@"b" : @1}, {}),
+      FSTTestSetMutation(@"foo/bar/suffix/key", @{@"a" : @1}),
+      FSTTestSetMutation(@"foo/baz", @{@"a" : @1}), FSTTestSetMutation(@"food/bar", @{@"a" : @1})
     ];
 
     // Store all the mutations.
     NSMutableArray<FSTMutationBatch *> *batches = [NSMutableArray array];
     for (FSTMutation *mutation in mutations) {
       FSTMutationBatch *batch =
-          [self.mutationQueue addMutationBatchWithWriteTime:[FIRTimestamp timestamp]
-                                                  mutations:@[ mutation ]];
+          self.mutationQueue->AddMutationBatch([FIRTimestamp timestamp], @[ mutation ]);
       [batches addObject:batch];
     }
 
@@ -350,11 +244,11 @@ NS_ASSUME_NONNULL_BEGIN
         Key("foo/baz"),
     };
 
-    NSArray<FSTMutationBatch *> *expected = @[ batches[1], batches[2], batches[4] ];
-    NSArray<FSTMutationBatch *> *matches =
-        [self.mutationQueue allMutationBatchesAffectingDocumentKeys:keys];
+    std::vector<FSTMutationBatch *> expected{batches[1], batches[2], batches[4]};
+    std::vector<FSTMutationBatch *> matches =
+        self.mutationQueue->AllMutationBatchesAffectingDocumentKeys(keys);
 
-    XCTAssertEqualObjects(matches, expected);
+    [self assertVector:matches matchesExpected:expected];
   });
 }
 
@@ -363,36 +257,31 @@ NS_ASSUME_NONNULL_BEGIN
 
   self.persistence.run("testAllMutationBatchesAffectingDocumentKeys_handlesOverlap", [&]() {
     NSArray<FSTMutation *> *group1 = @[
-      FSTTestSetMutation(@"foo/bar",
-                         @{@"a" : @1}),
-      FSTTestSetMutation(@"foo/baz",
-                         @{@"a" : @1}),
+      FSTTestSetMutation(@"foo/bar", @{@"a" : @1}),
+      FSTTestSetMutation(@"foo/baz", @{@"a" : @1}),
     ];
     FSTMutationBatch *batch1 =
-        [self.mutationQueue addMutationBatchWithWriteTime:[FIRTimestamp timestamp]
-                                                mutations:group1];
+        self.mutationQueue->AddMutationBatch([FIRTimestamp timestamp], group1);
 
     NSArray<FSTMutation *> *group2 = @[ FSTTestSetMutation(@"food/bar", @{@"a" : @1}) ];
-    [self.mutationQueue addMutationBatchWithWriteTime:[FIRTimestamp timestamp] mutations:group2];
+    self.mutationQueue->AddMutationBatch([FIRTimestamp timestamp], group2);
 
     NSArray<FSTMutation *> *group3 = @[
-      FSTTestSetMutation(@"foo/bar",
-                         @{@"b" : @1}),
+      FSTTestSetMutation(@"foo/bar", @{@"b" : @1}),
     ];
     FSTMutationBatch *batch3 =
-        [self.mutationQueue addMutationBatchWithWriteTime:[FIRTimestamp timestamp]
-                                                mutations:group3];
+        self.mutationQueue->AddMutationBatch([FIRTimestamp timestamp], group3);
 
     DocumentKeySet keys{
         Key("foo/bar"),
         Key("foo/baz"),
     };
 
-    NSArray<FSTMutationBatch *> *expected = @[ batch1, batch3 ];
-    NSArray<FSTMutationBatch *> *matches =
-        [self.mutationQueue allMutationBatchesAffectingDocumentKeys:keys];
+    std::vector<FSTMutationBatch *> expected{batch1, batch3};
+    std::vector<FSTMutationBatch *> matches =
+        self.mutationQueue->AllMutationBatchesAffectingDocumentKeys(keys);
 
-    XCTAssertEqualObjects(matches, expected);
+    [self assertVector:matches matchesExpected:expected];
   });
 }
 
@@ -401,35 +290,26 @@ NS_ASSUME_NONNULL_BEGIN
 
   self.persistence.run("testAllMutationBatchesAffectingQuery", [&]() {
     NSArray<FSTMutation *> *mutations = @[
-      FSTTestSetMutation(@"fob/bar",
-                         @{@"a" : @1}),
-      FSTTestSetMutation(@"foo/bar",
-                         @{@"a" : @1}),
-      FSTTestPatchMutation("foo/bar",
-                           @{@"b" : @1}, {}),
-      FSTTestSetMutation(@"foo/bar/suffix/key",
-                         @{@"a" : @1}),
-      FSTTestSetMutation(@"foo/baz",
-                         @{@"a" : @1}),
-      FSTTestSetMutation(@"food/bar",
-                         @{@"a" : @1})
+      FSTTestSetMutation(@"fob/bar", @{@"a" : @1}), FSTTestSetMutation(@"foo/bar", @{@"a" : @1}),
+      FSTTestPatchMutation("foo/bar", @{@"b" : @1}, {}),
+      FSTTestSetMutation(@"foo/bar/suffix/key", @{@"a" : @1}),
+      FSTTestSetMutation(@"foo/baz", @{@"a" : @1}), FSTTestSetMutation(@"food/bar", @{@"a" : @1})
     ];
 
     // Store all the mutations.
     NSMutableArray<FSTMutationBatch *> *batches = [NSMutableArray array];
     for (FSTMutation *mutation in mutations) {
       FSTMutationBatch *batch =
-          [self.mutationQueue addMutationBatchWithWriteTime:[FIRTimestamp timestamp]
-                                                  mutations:@[ mutation ]];
+          self.mutationQueue->AddMutationBatch([FIRTimestamp timestamp], @[ mutation ]);
       [batches addObject:batch];
     }
 
-    NSArray<FSTMutationBatch *> *expected = @[ batches[1], batches[2], batches[4] ];
+    std::vector<FSTMutationBatch *> expected = {batches[1], batches[2], batches[4]};
     FSTQuery *query = FSTTestQuery("foo");
-    NSArray<FSTMutationBatch *> *matches =
-        [self.mutationQueue allMutationBatchesAffectingQuery:query];
+    std::vector<FSTMutationBatch *> matches =
+        self.mutationQueue->AllMutationBatchesAffectingQuery(query);
 
-    XCTAssertEqualObjects(matches, expected);
+    [self assertVector:matches matchesExpected:expected];
   });
 }
 
@@ -437,54 +317,56 @@ NS_ASSUME_NONNULL_BEGIN
   if ([self isTestBaseClass]) return;
 
   self.persistence.run("testRemoveMutationBatches", [&]() {
-    NSMutableArray<FSTMutationBatch *> *batches = [self createBatches:10];
+    std::vector<FSTMutationBatch *> batches = [self createBatches:10];
 
-    [self.mutationQueue removeMutationBatches:@[ batches[0] ]];
-    [batches removeObjectAtIndex:0];
+    self.mutationQueue->RemoveMutationBatch(batches[0]);
+    batches.erase(batches.begin());
 
-    FSTMutationBatch *last = batches[batches.count - 1];
     XCTAssertEqual([self batchCount], 9);
 
-    NSArray<FSTMutationBatch *> *found;
+    std::vector<FSTMutationBatch *> found;
 
-    found = [self.mutationQueue allMutationBatchesThroughBatchID:last.batchID];
-    XCTAssertEqualObjects(found, batches);
-    XCTAssertEqual(found.count, 9);
+    found = self.mutationQueue->AllMutationBatches();
+    [self assertVector:found matchesExpected:batches];
+    XCTAssertEqual(found.size(), 9);
 
-    [self.mutationQueue removeMutationBatches:@[ batches[0], batches[1], batches[2] ]];
-    [batches removeObjectsInRange:NSMakeRange(0, 3)];
+    self.mutationQueue->RemoveMutationBatch(batches[0]);
+    self.mutationQueue->RemoveMutationBatch(batches[1]);
+    self.mutationQueue->RemoveMutationBatch(batches[2]);
+    batches.erase(batches.begin(), batches.begin() + 3);
     XCTAssertEqual([self batchCount], 6);
 
-    found = [self.mutationQueue allMutationBatchesThroughBatchID:last.batchID];
-    XCTAssertEqualObjects(found, batches);
-    XCTAssertEqual(found.count, 6);
+    found = self.mutationQueue->AllMutationBatches();
+    [self assertVector:found matchesExpected:batches];
+    XCTAssertEqual(found.size(), 6);
 
-    [self.mutationQueue removeMutationBatches:@[ batches[batches.count - 1] ]];
-    [batches removeObjectAtIndex:batches.count - 1];
+    self.mutationQueue->RemoveMutationBatch(batches[0]);
+    batches.erase(batches.begin());
     XCTAssertEqual([self batchCount], 5);
 
-    found = [self.mutationQueue allMutationBatchesThroughBatchID:last.batchID];
-    XCTAssertEqualObjects(found, batches);
-    XCTAssertEqual(found.count, 5);
+    found = self.mutationQueue->AllMutationBatches();
+    [self assertVector:found matchesExpected:batches];
+    XCTAssertEqual(found.size(), 5);
 
-    [self.mutationQueue removeMutationBatches:@[ batches[3] ]];
-    [batches removeObjectAtIndex:3];
+    self.mutationQueue->RemoveMutationBatch(batches[0]);
+    batches.erase(batches.begin());
     XCTAssertEqual([self batchCount], 4);
 
-    [self.mutationQueue removeMutationBatches:@[ batches[1] ]];
-    [batches removeObjectAtIndex:1];
+    self.mutationQueue->RemoveMutationBatch(batches[0]);
+    batches.erase(batches.begin());
     XCTAssertEqual([self batchCount], 3);
 
-    found = [self.mutationQueue allMutationBatchesThroughBatchID:last.batchID];
-    XCTAssertEqualObjects(found, batches);
-    XCTAssertEqual(found.count, 3);
-    XCTAssertFalse([self.mutationQueue isEmpty]);
+    found = self.mutationQueue->AllMutationBatches();
+    [self assertVector:found matchesExpected:batches];
+    XCTAssertEqual(found.size(), 3);
+    XCTAssertFalse(self.mutationQueue->IsEmpty());
 
-    [self.mutationQueue removeMutationBatches:batches];
-    found = [self.mutationQueue allMutationBatchesThroughBatchID:last.batchID];
-    XCTAssertEqualObjects(found, @[]);
-    XCTAssertEqual(found.count, 0);
-    XCTAssertTrue([self.mutationQueue isEmpty]);
+    for (FSTMutationBatch *batch : batches) {
+      self.mutationQueue->RemoveMutationBatch(batch);
+    }
+    found = self.mutationQueue->AllMutationBatches();
+    XCTAssertEqual(found.size(), 0);
+    XCTAssertTrue(self.mutationQueue->IsEmpty());
   });
 }
 
@@ -495,16 +377,15 @@ NS_ASSUME_NONNULL_BEGIN
   NSData *streamToken2 = [@"token2" dataUsingEncoding:NSUTF8StringEncoding];
 
   self.persistence.run("testStreamToken", [&]() {
-    [self.mutationQueue setLastStreamToken:streamToken1];
+    self.mutationQueue->SetLastStreamToken(streamToken1);
 
     FSTMutationBatch *batch1 = [self addMutationBatch];
     [self addMutationBatch];
 
-    XCTAssertEqualObjects([self.mutationQueue lastStreamToken], streamToken1);
+    XCTAssertEqualObjects(self.mutationQueue->GetLastStreamToken(), streamToken1);
 
-    [self.mutationQueue acknowledgeBatch:batch1 streamToken:streamToken2];
-    XCTAssertEqual(self.mutationQueue.highestAcknowledgedBatchID, batch1.batchID);
-    XCTAssertEqualObjects([self.mutationQueue lastStreamToken], streamToken2);
+    self.mutationQueue->AcknowledgeBatch(batch1, streamToken2);
+    XCTAssertEqualObjects(self.mutationQueue->GetLastStreamToken(), streamToken2);
   });
 }
 
@@ -523,8 +404,7 @@ NS_ASSUME_NONNULL_BEGIN
   FSTSetMutation *mutation = FSTTestSetMutation(key, @{@"a" : @1});
 
   FSTMutationBatch *batch =
-      [self.mutationQueue addMutationBatchWithWriteTime:[FIRTimestamp timestamp]
-                                              mutations:@[ mutation ]];
+      self.mutationQueue->AddMutationBatch([FIRTimestamp timestamp], @[ mutation ]);
   return batch;
 }
 
@@ -532,40 +412,36 @@ NS_ASSUME_NONNULL_BEGIN
  * Creates an array of batches containing @a number dummy FSTMutationBatches. Each has a different
  * batchID.
  */
-- (NSMutableArray<FSTMutationBatch *> *)createBatches:(int)number {
-  NSMutableArray<FSTMutationBatch *> *batches = [NSMutableArray array];
+- (std::vector<FSTMutationBatch *>)createBatches:(int)number {
+  std::vector<FSTMutationBatch *> batches;
 
   for (int i = 0; i < number; i++) {
     FSTMutationBatch *batch = [self addMutationBatch];
-    [batches addObject:batch];
+    batches.push_back(batch);
   }
 
   return batches;
 }
 
 /** Returns the number of mutation batches in the mutation queue. */
-- (NSUInteger)batchCount {
-  return [self.mutationQueue allMutationBatches].count;
+- (size_t)batchCount {
+  return self.mutationQueue->AllMutationBatches().size();
 }
 
 /**
- * Removes entries from from the given @a batches and returns them.
+ * Removes the first n entries from the the given batches and returns them.
  *
- * @param holes An array of indexes in the batches array; in increasing order. Indexes are relative
- *     to the original state of the batches array, not any intermediate state that might occur.
+ * @param n The number of batches to remove.
  * @param batches The array to mutate, removing entries from it.
  * @return A new array containing all the entries that were removed from @a batches.
  */
-- (NSArray<FSTMutationBatch *> *)makeHoles:(NSArray<NSNumber *> *)holes
-                                 inBatches:(NSMutableArray<FSTMutationBatch *> *)batches {
-  NSMutableArray<FSTMutationBatch *> *removed = [NSMutableArray array];
-  for (NSUInteger i = 0; i < holes.count; i++) {
-    NSUInteger index = holes[i].unsignedIntegerValue - i;
-    FSTMutationBatch *batch = batches[index];
-    [self.mutationQueue removeMutationBatches:@[ batch ]];
+- (std::vector<FSTMutationBatch *>)removeFirstBatches:(size_t)n
+                                            inBatches:(std::vector<FSTMutationBatch *> *)batches {
+  std::vector<FSTMutationBatch *> removed(batches->begin(), batches->begin() + n);
+  batches->erase(batches->begin(), batches->begin() + n);
 
-    [batches removeObjectAtIndex:index];
-    [removed addObject:batch];
+  for (FSTMutationBatch *batch : removed) {
+    self.mutationQueue->RemoveMutationBatch(batch);
   }
   return removed;
 }

@@ -22,7 +22,8 @@
 #import "Firestore/Example/Tests/Util/FSTIntegrationTestCase.h"
 #import "Firestore/Source/API/FIRFirestore+Internal.h"
 #import "Firestore/Source/Core/FSTFirestoreClient.h"
-#import "Firestore/Source/Util/FSTDispatchQueue.h"
+
+using firebase::firestore::util::TimerId;
 
 @interface FIRDatabaseTests : FSTIntegrationTestCase
 @end
@@ -32,13 +33,11 @@
 - (void)testCanUpdateAnExistingDocument {
   FIRDocumentReference *doc = [self.db documentWithPath:@"rooms/eros"];
   NSDictionary<NSString *, id> *initialData =
-      @{@"desc" : @"Description",
-        @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
+      @{@"desc" : @"Description", @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
   NSDictionary<NSString *, id> *updateData =
       @{@"desc" : @"NewDescription", @"owner.email" : @"new@xyz.com"};
   NSDictionary<NSString *, id> *finalData =
-      @{@"desc" : @"NewDescription",
-        @"owner" : @{@"name" : @"Jonny", @"email" : @"new@xyz.com"}};
+      @{@"desc" : @"NewDescription", @"owner" : @{@"name" : @"Jonny", @"email" : @"new@xyz.com"}};
 
   [self writeDocumentRef:doc data:initialData];
 
@@ -55,16 +54,40 @@
   XCTAssertEqualObjects(result.data, finalData);
 }
 
+- (void)testCanUpdateAnUnknownDocument {
+  [self readerAndWriterOnDocumentRef:^(NSString *path, FIRDocumentReference *readerRef,
+                                       FIRDocumentReference *writerRef) {
+    [self writeDocumentRef:writerRef data:@{@"a" : @"a"}];
+    [self updateDocumentRef:readerRef data:@{@"b" : @"b"}];
+
+    FIRDocumentSnapshot *writerSnap = [self readDocumentForRef:writerRef
+                                                        source:FIRFirestoreSourceCache];
+    XCTAssertTrue(writerSnap.exists);
+
+    XCTestExpectation *expectation =
+        [self expectationWithDescription:@"testCanUpdateAnUnknownDocument"];
+    [readerRef getDocumentWithSource:FIRFirestoreSourceCache
+                          completion:^(FIRDocumentSnapshot *doc, NSError *_Nullable error) {
+                            XCTAssertNotNil(error);
+                            [expectation fulfill];
+                          }];
+    [self awaitExpectations];
+
+    writerSnap = [self readDocumentForRef:writerRef];
+    XCTAssertEqualObjects(writerSnap.data, (@{@"a" : @"a", @"b" : @"b"}));
+    FIRDocumentSnapshot *readerSnap = [self readDocumentForRef:writerRef];
+    XCTAssertEqualObjects(readerSnap.data, (@{@"a" : @"a", @"b" : @"b"}));
+  }];
+}
+
 - (void)testCanDeleteAFieldWithAnUpdate {
   FIRDocumentReference *doc = [self.db documentWithPath:@"rooms/eros"];
   NSDictionary<NSString *, id> *initialData =
-      @{@"desc" : @"Description",
-        @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
+      @{@"desc" : @"Description", @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
   NSDictionary<NSString *, id> *updateData =
       @{@"owner.email" : [FIRFieldValue fieldValueForDelete]};
   NSDictionary<NSString *, id> *finalData =
-      @{@"desc" : @"Description",
-        @"owner" : @{@"name" : @"Jonny"}};
+      @{@"desc" : @"Description", @"owner" : @{@"name" : @"Jonny"}};
 
   [self writeDocumentRef:doc data:initialData];
   [self updateDocumentRef:doc data:updateData];
@@ -112,8 +135,7 @@
   FIRDocumentReference *doc = [[self.db collectionWithPath:@"rooms"] documentWithAutoID];
 
   NSDictionary<NSString *, id> *initialData =
-      @{@"desc" : @"Description",
-        @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
+      @{@"desc" : @"Description", @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
   NSDictionary<NSString *, id> *udpateData = @{@"desc" : @"NewDescription"};
 
   [self writeDocumentRef:doc data:initialData];
@@ -127,11 +149,9 @@
   FIRDocumentReference *doc = [[self.db collectionWithPath:@"rooms"] documentWithAutoID];
 
   NSDictionary<NSString *, id> *initialData =
-      @{@"desc" : @"Description",
-        @"owner.data" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
+      @{@"desc" : @"Description", @"owner.data" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
   NSDictionary<NSString *, id> *mergeData =
-      @{@"updated" : @YES,
-        @"owner.data" : @{@"name" : @"Sebastian"}};
+      @{@"updated" : @YES, @"owner.data" : @{@"name" : @"Sebastian"}};
   NSDictionary<NSString *, id> *finalData = @{
     @"desc" : @"Description",
     @"updated" : @YES,
@@ -216,9 +236,7 @@
   FIRDocumentReference *doc = [[self.db collectionWithPath:@"rooms"] documentWithAutoID];
 
   NSDictionary<NSString *, id> *initialData =
-      @{@"untouched" : @YES,
-        @"foo" : @"bar",
-        @"nested" : @{@"untouched" : @YES, @"foo" : @"bar"}};
+      @{@"untouched" : @YES, @"foo" : @"bar", @"nested" : @{@"untouched" : @YES, @"foo" : @"bar"}};
   NSDictionary<NSString *, id> *mergeData = @{
     @"foo" : [FIRFieldValue fieldValueForDelete],
     @"nested" : @{@"foo" : [FIRFieldValue fieldValueForDelete]}
@@ -263,9 +281,7 @@
     }
   };
   NSDictionary<NSString *, id> *finalData =
-      @{@"untouched" : @YES,
-        @"inner" : @{},
-        @"nested" : @{@"untouched" : @YES}};
+      @{@"untouched" : @YES, @"inner" : @{}, @"nested" : @{@"untouched" : @YES}};
 
   [self writeDocumentRef:doc data:initialData];
 
@@ -289,9 +305,7 @@
   FIRDocumentReference *doc = [[self.db collectionWithPath:@"rooms"] documentWithAutoID];
 
   NSDictionary<NSString *, id> *initialData =
-      @{@"untouched" : @YES,
-        @"foo" : @"bar",
-        @"nested" : @{@"untouched" : @YES, @"foo" : @"bar"}};
+      @{@"untouched" : @YES, @"foo" : @"bar", @"nested" : @{@"untouched" : @YES, @"foo" : @"bar"}};
   NSDictionary<NSString *, id> *mergeData = @{
     @"foo" : [FIRFieldValue fieldValueForServerTimestamp],
     @"inner" : @{@"foo" : [FIRFieldValue fieldValueForServerTimestamp]},
@@ -329,9 +343,7 @@
     @"mapInArray" : @[ @{@"data" : @"old"} ]
   };
   NSDictionary<NSString *, id> *mergeData =
-      @{@"data" : @"new",
-        @"topLevel" : @[ @"new" ],
-        @"mapInArray" : @[ @{@"data" : @"new"} ]};
+      @{@"data" : @"new", @"topLevel" : @[ @"new" ], @"mapInArray" : @[ @{@"data" : @"new"} ]};
   NSDictionary<NSString *, id> *finalData = @{
     @"untouched" : @YES,
     @"data" : @"new",
@@ -369,8 +381,7 @@
   FIRDocumentReference *doc = [[self.db collectionWithPath:@"rooms"] documentWithAutoID];
 
   NSDictionary<NSString *, id> *initialData =
-      @{@"desc" : @"Description",
-        @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
+      @{@"desc" : @"Description", @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
 
   NSDictionary<NSString *, id> *finalData = @{@"desc" : @"Description", @"owner" : @"Sebastian"};
 
@@ -396,8 +407,7 @@
   FIRDocumentReference *doc = [[self.db collectionWithPath:@"rooms"] documentWithAutoID];
 
   NSDictionary<NSString *, id> *initialData =
-      @{@"desc" : @"Description",
-        @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
+      @{@"desc" : @"Description", @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
 
   NSDictionary<NSString *, id> *finalData = @{@"desc" : @"Description", @"owner" : @"Sebastian"};
 
@@ -423,8 +433,7 @@
   FIRDocumentReference *doc = [[self.db collectionWithPath:@"rooms"] documentWithAutoID];
 
   NSDictionary<NSString *, id> *initialData =
-      @{@"desc" : @"Description",
-        @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
+      @{@"desc" : @"Description", @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
 
   NSDictionary<NSString *, id> *finalData = @{@"desc" : @"Description", @"owner" : @"Sebastian"};
 
@@ -450,8 +459,7 @@
   FIRDocumentReference *doc = [[self.db collectionWithPath:@"rooms"] documentWithAutoID];
 
   NSDictionary<NSString *, id> *initialData =
-      @{@"desc" : @"Description",
-        @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
+      @{@"desc" : @"Description", @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
 
   NSDictionary<NSString *, id> *finalData = initialData;
 
@@ -477,12 +485,10 @@
   FIRDocumentReference *doc = [[self.db collectionWithPath:@"rooms"] documentWithAutoID];
 
   NSDictionary<NSString *, id> *initialData =
-      @{@"desc" : @"Description",
-        @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
+      @{@"desc" : @"Description", @"owner" : @{@"name" : @"Jonny", @"email" : @"abc@xyz.com"}};
 
   NSDictionary<NSString *, id> *finalData =
-      @{@"desc" : @"Description",
-        @"owner" : @{@"name" : @"Sebastian", @"email" : @"new@xyz.com"}};
+      @{@"desc" : @"Description", @"owner" : @{@"name" : @"Sebastian", @"email" : @"new@xyz.com"}};
 
   [self writeDocumentRef:doc data:initialData];
 
@@ -494,10 +500,10 @@
     @"owner" : @{@"name" : @"Sebastian", @"email" : @"new@xyz.com"}
   }
       mergeFields:@[ @"owner.name", @"owner", @"owner" ]
-      completion:^(NSError *error) {
-        XCTAssertNil(error);
-        [completed fulfill];
-      }];
+       completion:^(NSError *error) {
+         XCTAssertNil(error);
+         [completed fulfill];
+       }];
 
   [self awaitExpectations];
 
@@ -567,7 +573,7 @@
           XCTAssertFalse(doc.exists);
           [snapshotCompletion fulfill];
 
-        } else if (callbacks == 2) {
+        } else {
           XCTFail("Should not have received this callback");
         }
       }];
@@ -598,7 +604,7 @@
           XCTAssertEqual(doc.metadata.hasPendingWrites, YES);
           [dataCompletion fulfill];
 
-        } else if (callbacks == 3) {
+        } else {
           XCTFail("Should not have received this callback");
         }
       }];
@@ -639,7 +645,7 @@
                                                XCTAssertEqual(doc.metadata.hasPendingWrites, NO);
                                                [dataCompletion fulfill];
 
-                                             } else if (callbacks == 4) {
+                                             } else {
                                                XCTFail("Should not have received this callback");
                                              }
                                            }];
@@ -679,7 +685,7 @@
           XCTAssertEqual(doc.metadata.hasPendingWrites, YES);
           [changeCompletion fulfill];
 
-        } else if (callbacks == 3) {
+        } else {
           XCTFail("Should not have received this callback");
         }
       }];
@@ -733,7 +739,7 @@
                                                XCTAssertEqual(doc.metadata.isFromCache, NO);
                                                [changeCompletion fulfill];
 
-                                             } else if (callbacks == 5) {
+                                             } else {
                                                XCTFail("Should not have received this callback");
                                              }
                                            }];
@@ -772,7 +778,7 @@
           XCTAssertFalse(doc.exists);
           [changeCompletion fulfill];
 
-        } else if (callbacks == 3) {
+        } else {
           XCTFail("Should not have received this callback");
         }
       }];
@@ -820,7 +826,7 @@
                                                XCTAssertEqual(doc.metadata.isFromCache, NO);
                                                [changeCompletion fulfill];
 
-                                             } else if (callbacks == 4) {
+                                             } else {
                                                XCTFail("Should not have received this callback");
                                              }
                                            }];
@@ -859,7 +865,7 @@
           XCTAssertEqual(docSet.documents[0].metadata.hasPendingWrites, YES);
           [changeCompletion fulfill];
 
-        } else if (callbacks == 3) {
+        } else {
           XCTFail("Should not have received a third callback");
         }
       }];
@@ -902,7 +908,7 @@
           XCTAssertEqual(docSet.documents[0].metadata.hasPendingWrites, YES);
           [changeCompletion fulfill];
 
-        } else if (callbacks == 3) {
+        } else {
           XCTFail("Should not have received a third callback");
         }
       }];
@@ -942,7 +948,7 @@
           XCTAssertEqual(docSet.count, 0);
           [changeCompletion fulfill];
 
-        } else if (callbacks == 4) {
+        } else {
           XCTFail("Should not have received a third callback");
         }
       }];
@@ -1178,7 +1184,7 @@
   FIRFirestore *firestore = doc.firestore;
 
   [self writeDocumentRef:doc data:@{@"foo" : @"bar"}];
-  [[self queueForFirestore:firestore] runDelayedCallbacksUntil:FSTTimerIDWriteStreamIdle];
+  [self queueForFirestore:firestore] -> RunScheduledOperationsUntil(TimerId::WriteStreamIdle);
   [self writeDocumentRef:doc data:@{@"foo" : @"bar"}];
 }
 
@@ -1187,7 +1193,7 @@
   FIRFirestore *firestore = doc.firestore;
 
   [self readSnapshotForRef:[self documentRef] requireOnline:YES];
-  [[self queueForFirestore:firestore] runDelayedCallbacksUntil:FSTTimerIDListenStreamIdle];
+  [self queueForFirestore:firestore] -> RunScheduledOperationsUntil(TimerId::ListenStreamIdle);
   [self readSnapshotForRef:[self documentRef] requireOnline:YES];
 }
 

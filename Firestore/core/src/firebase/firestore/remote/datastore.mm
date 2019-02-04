@@ -19,15 +19,21 @@
 #include <unordered_set>
 #include <utility>
 
+#import "Firestore/Source/Remote/FSTSerializerBeta.h"
+
 #include "Firestore/core/include/firebase/firestore/firestore_errors.h"
 #include "Firestore/core/src/firebase/firestore/auth/credentials_provider.h"
 #include "Firestore/core/src/firebase/firestore/auth/token.h"
 #include "Firestore/core/src/firebase/firestore/core/database_info.h"
+#include "Firestore/core/src/firebase/firestore/model/database_id.h"
+#include "Firestore/core/src/firebase/firestore/model/document_key.h"
 #include "Firestore/core/src/firebase/firestore/remote/connectivity_monitor.h"
 #include "Firestore/core/src/firebase/firestore/remote/grpc_completion.h"
+#include "Firestore/core/src/firebase/firestore/remote/grpc_connection.h"
 #include "Firestore/core/src/firebase/firestore/remote/grpc_stream.h"
 #include "Firestore/core/src/firebase/firestore/remote/grpc_streaming_reader.h"
 #include "Firestore/core/src/firebase/firestore/remote/grpc_unary_call.h"
+#include "Firestore/core/src/firebase/firestore/util/async_queue.h"
 #include "Firestore/core/src/firebase/firestore/util/error_apple.h"
 #include "Firestore/core/src/firebase/firestore/util/executor_libdispatch.h"
 #include "Firestore/core/src/firebase/firestore/util/hard_assert.h"
@@ -47,14 +53,13 @@ using model::DocumentKey;
 using util::AsyncQueue;
 using util::Status;
 using util::StatusOr;
-using util::internal::Executor;
-using util::internal::ExecutorLibdispatch;
+using util::Executor;
+using util::ExecutorLibdispatch;
 
 namespace {
 
-const auto kRpcNameCommit = "/google.firestore.v1beta1.Firestore/Commit";
-const auto kRpcNameLookup =
-    "/google.firestore.v1beta1.Firestore/BatchGetDocuments";
+const auto kRpcNameCommit = "/google.firestore.v1.Firestore/Commit";
+const auto kRpcNameLookup = "/google.firestore.v1.Firestore/BatchGetDocuments";
 
 std::unique_ptr<Executor> CreateExecutor() {
   auto queue = dispatch_queue_create("com.google.firebase.firestore.rpc",
@@ -86,19 +91,34 @@ void LogGrpcCallFinished(absl::string_view rpc_name,
 
 Datastore::Datastore(const DatabaseInfo& database_info,
                      AsyncQueue* worker_queue,
+                     CredentialsProvider* credentials)
+    : Datastore{database_info, worker_queue, credentials,
+                ConnectivityMonitor::Create(worker_queue)} {
+}
+
+Datastore::Datastore(const DatabaseInfo& database_info,
+                     AsyncQueue* worker_queue,
                      CredentialsProvider* credentials,
-                     FSTSerializerBeta* serializer)
+                     std::unique_ptr<ConnectivityMonitor> connectivity_monitor)
     : worker_queue_{NOT_NULL(worker_queue)},
       credentials_{credentials},
       rpc_executor_{CreateExecutor()},
-      connectivity_monitor_{ConnectivityMonitor::Create(worker_queue)},
+      connectivity_monitor_{std::move(connectivity_monitor)},
       grpc_connection_{database_info, worker_queue, &grpc_queue_,
                        connectivity_monitor_.get()},
-      serializer_bridge_{NOT_NULL(serializer)} {
+      serializer_bridge_{database_info} {
+  if (!database_info.ssl_enabled()) {
+    GrpcConnection::UseInsecureChannel(database_info.host());
+  }
+}
+
+void Datastore::Start() {
   rpc_executor_->Execute([this] { PollGrpcQueue(); });
 }
 
 void Datastore::Shutdown() {
+  is_shut_down_ = true;
+
   // Order matters here: shutting down `grpc_connection_`, which will quickly
   // finish any pending gRPC calls, must happen before shutting down the gRPC
   // queue.
@@ -131,10 +151,10 @@ void Datastore::PollGrpcQueue() {
 }
 
 std::shared_ptr<WatchStream> Datastore::CreateWatchStream(
-    id<FSTWatchStreamDelegate> delegate) {
+    WatchStreamCallback* callback) {
   return std::make_shared<WatchStream>(worker_queue_, credentials_,
                                        serializer_bridge_.GetSerializer(),
-                                       &grpc_connection_, delegate);
+                                       &grpc_connection_, callback);
 }
 
 std::shared_ptr<WriteStream> Datastore::CreateWriteStream(
@@ -146,23 +166,23 @@ std::shared_ptr<WriteStream> Datastore::CreateWriteStream(
 
 void Datastore::CommitMutations(NSArray<FSTMutation*>* mutations,
                                 FSTVoidErrorBlock completion) {
-  grpc::ByteBuffer message = serializer_bridge_.ToByteBuffer(
-      serializer_bridge_.CreateCommitRequest(mutations));
-
   ResumeRpcWithCredentials(
-      [this, message, completion](const StatusOr<Token>& maybe_credentials) {
+      [this, mutations, completion](const StatusOr<Token>& maybe_credentials) {
         if (!maybe_credentials.ok()) {
           completion(util::MakeNSError(maybe_credentials.status()));
           return;
         }
-        CommitMutationsWithCredentials(maybe_credentials.ValueOrDie(), message,
-                                       completion);
+        CommitMutationsWithCredentials(maybe_credentials.ValueOrDie(),
+                                       mutations, completion);
       });
 }
 
 void Datastore::CommitMutationsWithCredentials(const Token& token,
-                                               const grpc::ByteBuffer& message,
+                                               NSArray<FSTMutation*>* mutations,
                                                FSTVoidErrorBlock completion) {
+  grpc::ByteBuffer message = serializer_bridge_.ToByteBuffer(
+      serializer_bridge_.CreateCommitRequest(mutations));
+
   std::unique_ptr<GrpcUnaryCall> call_owning = grpc_connection_.CreateUnaryCall(
       kRpcNameCommit, token, std::move(message));
   GrpcUnaryCall* call = call_owning.get();
@@ -191,24 +211,24 @@ void Datastore::OnCommitMutationsResponse(
 void Datastore::LookupDocuments(
     const std::vector<DocumentKey>& keys,
     FSTVoidMaybeDocumentArrayErrorBlock completion) {
-  grpc::ByteBuffer message = serializer_bridge_.ToByteBuffer(
-      serializer_bridge_.CreateLookupRequest(keys));
-
   ResumeRpcWithCredentials(
-      [this, message, completion](const StatusOr<Token>& maybe_credentials) {
+      [this, keys, completion](const StatusOr<Token>& maybe_credentials) {
         if (!maybe_credentials.ok()) {
           completion(nil, util::MakeNSError(maybe_credentials.status()));
           return;
         }
-        LookupDocumentsWithCredentials(maybe_credentials.ValueOrDie(), message,
+        LookupDocumentsWithCredentials(maybe_credentials.ValueOrDie(), keys,
                                        completion);
       });
 }
 
 void Datastore::LookupDocumentsWithCredentials(
     const Token& token,
-    const grpc::ByteBuffer& message,
+    const std::vector<DocumentKey>& keys,
     FSTVoidMaybeDocumentArrayErrorBlock completion) {
+  grpc::ByteBuffer message = serializer_bridge_.ToByteBuffer(
+      serializer_bridge_.CreateLookupRequest(keys));
+
   std::unique_ptr<GrpcStreamingReader> call_owning =
       grpc_connection_.CreateStreamingReader(kRpcNameLookup, token,
                                              std::move(message));
@@ -262,6 +282,11 @@ void Datastore::ResumeRpcWithCredentials(const OnCredentials& on_credentials) {
               if (!strong_this) {
                 return;
               }
+              // In case Auth callback is invoked after Datastore has been shut
+              // down.
+              if (strong_this->is_shut_down_) {
+                return;
+              }
 
               on_credentials(result);
             });
@@ -281,6 +306,46 @@ void Datastore::RemoveGrpcCall(GrpcCall* to_remove) {
                             });
   HARD_ASSERT(found != active_calls_.end(), "Missing gRPC call");
   active_calls_.erase(found);
+}
+
+bool Datastore::IsAbortedError(const Status& error) {
+  return error.code() == FirestoreErrorCode::Aborted;
+}
+
+bool Datastore::IsPermanentError(const Status& error) {
+  switch (error.code()) {
+    case FirestoreErrorCode::Ok:
+      HARD_FAIL("Treated status OK as error");
+    case FirestoreErrorCode::Cancelled:
+    case FirestoreErrorCode::Unknown:
+    case FirestoreErrorCode::DeadlineExceeded:
+    case FirestoreErrorCode::ResourceExhausted:
+    case FirestoreErrorCode::Internal:
+    case FirestoreErrorCode::Unavailable:
+      // Unauthenticated means something went wrong with our token and we need
+      // to retry with new credentials which will happen automatically.
+    case FirestoreErrorCode::Unauthenticated:
+      return false;
+    case FirestoreErrorCode::InvalidArgument:
+    case FirestoreErrorCode::NotFound:
+    case FirestoreErrorCode::AlreadyExists:
+    case FirestoreErrorCode::PermissionDenied:
+    case FirestoreErrorCode::FailedPrecondition:
+    case FirestoreErrorCode::Aborted:
+      // Aborted might be retried in some scenarios, but that is dependant on
+      // the context and should handled individually by the calling code.
+      // See https://cloud.google.com/apis/design/errors
+    case FirestoreErrorCode::OutOfRange:
+    case FirestoreErrorCode::Unimplemented:
+    case FirestoreErrorCode::DataLoss:
+      return true;
+  }
+
+  HARD_FAIL("Unknown status code: %s", error.code());
+}
+
+bool Datastore::IsPermanentWriteError(const Status& error) {
+  return IsPermanentError(error) && !IsAbortedError(error);
 }
 
 std::string Datastore::GetWhitelistedHeadersAsString(

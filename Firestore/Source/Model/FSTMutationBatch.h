@@ -43,14 +43,6 @@ using DocumentVersionMap = std::unordered_map<DocumentKey, SnapshotVersion, Docu
 NS_ASSUME_NONNULL_BEGIN
 
 /**
- * A BatchID that was searched for and not found or a batch ID value known to be before all known
- * batches.
- *
- * BatchId values from the local store are non-negative so this value is before all batches.
- */
-extern const firebase::firestore::model::BatchId kFSTBatchIDUnknown;
-
-/**
  * A batch of mutations that will be sent as one unit to the backend. Batches can be marked as a
  * tombstone if the mutation queue does not remove them immediately. When a batch is a tombstone
  * it has no mutations.
@@ -65,7 +57,8 @@ extern const firebase::firestore::model::BatchId kFSTBatchIDUnknown;
 - (id)init NS_UNAVAILABLE;
 
 /**
- * Applies all the mutations in this FSTMutationBatch to the specified document.
+ * Applies all the mutations in this FSTMutationBatch to the specified document to create a new
+ * remote document.
  *
  * @param maybeDoc The document to apply mutations to.
  * @param documentKey The key of the document to apply mutations to.
@@ -73,28 +66,18 @@ extern const firebase::firestore::model::BatchId kFSTBatchIDUnknown;
  *   it's assumed that this is a local (latency-compensated) application and documents will have
  *   their hasLocalMutations flag set.
  */
-- (FSTMaybeDocument *_Nullable)applyTo:(FSTMaybeDocument *_Nullable)maybeDoc
-                           documentKey:(const firebase::firestore::model::DocumentKey &)documentKey
-                   mutationBatchResult:(FSTMutationBatchResult *_Nullable)mutationBatchResult;
+- (FSTMaybeDocument *_Nullable)
+    applyToRemoteDocument:(FSTMaybeDocument *_Nullable)maybeDoc
+              documentKey:(const firebase::firestore::model::DocumentKey &)documentKey
+      mutationBatchResult:(FSTMutationBatchResult *_Nullable)mutationBatchResult;
 
 /**
  * A helper version of applyTo for applying mutations locally (without a mutation batch result from
  * the backend).
  */
-- (FSTMaybeDocument *_Nullable)applyTo:(FSTMaybeDocument *_Nullable)maybeDoc
-                           documentKey:(const firebase::firestore::model::DocumentKey &)documentKey;
-
-/**
- * Returns YES if this mutation batch has already been removed from the mutation queue.
- *
- * Note that not all implementations of the FSTMutationQueue necessarily use tombstones as a part
- * of their implementation and generally speaking no code outside the mutation queues should really
- * care about this.
- */
-- (BOOL)isTombstone;
-
-/** Converts this batch to a tombstone. */
-- (FSTMutationBatch *)toTombstone;
+- (FSTMaybeDocument *_Nullable)
+    applyToLocalDocument:(FSTMaybeDocument *_Nullable)maybeDoc
+             documentKey:(const firebase::firestore::model::DocumentKey &)documentKey;
 
 /** Returns the set of unique keys referenced by all mutations in the batch. */
 - (firebase::firestore::model::DocumentKeySet)keys;

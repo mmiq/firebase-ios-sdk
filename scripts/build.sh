@@ -28,6 +28,7 @@ product can be one of:
   Firebase
   Firestore
   InAppMessagingDisplay
+  SymbolCollision
 
 platform can be one of:
   iOS (default)
@@ -68,6 +69,7 @@ fi
 # Runs xcodebuild with the given flags, piping output to xcpretty
 # If xcodebuild fails with known error codes, retries once.
 function RunXcodebuild() {
+
   xcodebuild "$@" | xcpretty; result=$?
   if [[ $result == 65 ]]; then
     echo "xcodebuild exited with 65, retrying" 1>&2
@@ -231,12 +233,21 @@ case "$product-$method-$platform" in
     ;;
 
   InAppMessagingDisplay-xcodebuild-iOS)
-    # Run UI tests on both iPad and iphone simultors
+    # Run UI tests on both iPad and iPhone simulators
+    # TODO: Running two destinations from one xcodebuild command stopped working with Xcode 10.
+    # Consider separating static library tests to a separate job.
     RunXcodebuild \
         -workspace 'InAppMessagingDisplay/Example/InAppMessagingDisplay-Sample.xcworkspace'  \
         -scheme 'FiamDisplaySwiftExample' \
         "${xcb_flags[@]}" \
-        -destination 'platform=iOS Simulator,name=iPad Air' \
+        build \
+        test
+
+    RunXcodebuild \
+        -workspace 'InAppMessagingDisplay/Example/InAppMessagingDisplay-Sample.xcworkspace'  \
+        -scheme 'FiamDisplaySwiftExample' \
+        -sdk 'iphonesimulator' \
+        -destination 'platform=iOS Simulator,name=iPad Pro (9.7-inch)' \
         build \
         test
 
@@ -244,12 +255,19 @@ case "$product-$method-$platform" in
     sed -i -e 's/use_frameworks/\#use_frameworks/' Podfile
     pod update --no-repo-update
     cd ../..
-    # Run UI tests on both iPad and iphone simultors
+    # Run UI tests on both iPad and iPhone simulators
     RunXcodebuild \
         -workspace 'InAppMessagingDisplay/Example/InAppMessagingDisplay-Sample.xcworkspace'  \
         -scheme 'FiamDisplaySwiftExample' \
         "${xcb_flags[@]}" \
-        -destination 'platform=iOS Simulator,name=iPad Air' \
+        build \
+        test
+
+    RunXcodebuild \
+        -workspace 'InAppMessagingDisplay/Example/InAppMessagingDisplay-Sample.xcworkspace'  \
+        -scheme 'FiamDisplaySwiftExample' \
+        -sdk 'iphonesimulator' \
+        -destination 'platform=iOS Simulator,name=iPad Pro (9.7-inch)' \
         build \
         test
     ;;
@@ -278,16 +296,6 @@ case "$product-$method-$platform" in
         "${xcb_flags[@]}" \
         build
 
-    # Firestore_FuzzTests_iOS require a Clang that supports -fsanitize-coverage=trace-pc-guard
-    # and cannot run with thread sanitizer.
-    if [[ "$xcode_major" -ge 9 ]] && ! [[ -n "${SANITIZERS:-}" && "$SANITIZERS" = *"tsan"* ]]; then
-      RunXcodebuild \
-          -workspace 'Firestore/Example/Firestore.xcworkspace' \
-          -scheme "Firestore_FuzzTests_iOS" \
-          "${xcb_flags[@]}" \
-          FUZZING_TARGET="NONE" \
-          test
-    fi
     ;;
 
   Firestore-cmake-macOS)
@@ -299,6 +307,14 @@ case "$product-$method-$platform" in
     cpus=$(sysctl -n hw.ncpu)
     (cd build; env make -j $cpus all generate_protos)
     (cd build; env CTEST_OUTPUT_ON_FAILURE=1 make -j $cpus test)
+    ;;
+
+  SymbolCollision-xcodebuild-*)
+    RunXcodebuild \
+        -workspace 'SymbolCollisionTest/SymbolCollisionTest.xcworkspace' \
+        -scheme "SymbolCollisionTest" \
+        "${xcb_flags[@]}" \
+        build
     ;;
 
   *)

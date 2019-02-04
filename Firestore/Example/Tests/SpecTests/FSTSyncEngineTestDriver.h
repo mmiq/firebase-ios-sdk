@@ -20,12 +20,14 @@
 #include <unordered_map>
 
 #import "Firestore/Source/Remote/FSTRemoteStore.h"
-#import "Firestore/Source/Util/FSTDispatchQueue.h"
 
 #include "Firestore/core/src/firebase/firestore/auth/user.h"
 #include "Firestore/core/src/firebase/firestore/model/document_key.h"
+#include "Firestore/core/src/firebase/firestore/model/document_key_set.h"
 #include "Firestore/core/src/firebase/firestore/model/snapshot_version.h"
 #include "Firestore/core/src/firebase/firestore/model/types.h"
+#include "Firestore/core/src/firebase/firestore/remote/watch_change.h"
+#include "Firestore/core/src/firebase/firestore/util/async_queue.h"
 
 @class FSTDocumentKey;
 @class FSTMutation;
@@ -33,7 +35,6 @@
 @class FSTQuery;
 @class FSTQueryData;
 @class FSTViewSnapshot;
-@class FSTWatchChange;
 @protocol FSTPersistence;
 
 NS_ASSUME_NONNULL_BEGIN
@@ -71,8 +72,8 @@ typedef std::unordered_map<firebase::firestore::auth::User,
  *
  * FSTSyncEngineTestDriver:
  *
- * + constructs an FSTSyncEngine using a mocked FSTDatastore for the backend;
- * + allows the caller to trigger events (user API calls and incoming FSTDatastore messages);
+ * + constructs an FSTSyncEngine using a mocked Datastore for the backend;
+ * + allows the caller to trigger events (user API calls and incoming Datastore messages);
  * + performs sequencing validation internally (e.g. that when a user mutation is initiated, the
  *   FSTSyncEngine correctly sends it to the remote store); and
  * + exposes the set of FSTQueryEvents generated for the caller to verify.
@@ -85,7 +86,7 @@ typedef std::unordered_map<firebase::firestore::auth::User,
  *
  * Each method on the driver injects a different event into the system.
  */
-@interface FSTSyncEngineTestDriver : NSObject <FSTOnlineStateDelegate>
+@interface FSTSyncEngineTestDriver : NSObject
 
 /**
  * Initializes the underlying FSTSyncEngine with the given local persistence implementation and
@@ -146,7 +147,7 @@ typedef std::unordered_map<firebase::firestore::auth::User,
  * @param snapshot A snapshot version to attach, if applicable. This should be sent when
  *      simulating the server having sent a complete snapshot.
  */
-- (void)receiveWatchChange:(FSTWatchChange *)change
+- (void)receiveWatchChange:(const firebase::firestore::remote::WatchChange &)change
            snapshotVersion:(const firebase::firestore::model::SnapshotVersion &)snapshot;
 
 /**
@@ -227,9 +228,9 @@ typedef std::unordered_map<firebase::firestore::auth::User,
 - (void)enableNetwork;
 
 /**
- * Runs a pending timer callback on the FSTDispatchQueue.
+ * Runs a pending timer callback on the worker queue.
  */
-- (void)runTimer:(FSTTimerID)timerID;
+- (void)runTimer:(firebase::firestore::util::TimerId)timerID;
 
 /**
  * Switches the FSTSyncEngine to a new user. The test driver tracks the outstanding mutations for
@@ -265,6 +266,12 @@ typedef std::unordered_map<firebase::firestore::auth::User,
 - (std::map<firebase::firestore::model::DocumentKey, firebase::firestore::model::TargetId>)
     currentLimboDocuments;
 
+/** The expected set of documents in limbo. */
+- (const firebase::firestore::model::DocumentKeySet &)expectedLimboDocuments;
+
+/** Sets the expected set of documents in limbo. */
+- (void)setExpectedLimboDocuments:(firebase::firestore::model::DocumentKeySet)docs;
+
 /**
  * The writes that have been sent to the FSTSyncEngine via writeUserMutation: but not yet
  * acknowledged by calling receiveWriteAck/Error:. They are tracked per-user.
@@ -286,16 +293,15 @@ typedef std::unordered_map<firebase::firestore::auth::User,
 /** The current user for the FSTSyncEngine; determines which mutation queue is active. */
 @property(nonatomic, assign, readonly) const firebase::firestore::auth::User &currentUser;
 
-/** The expected set of documents in limbo. */
-@property(nonatomic, strong, readwrite) NSSet<FSTDocumentKey *> *expectedLimboDocuments;
-
 /** The set of active targets as observed on the watch stream. */
-@property(nonatomic, strong, readonly)
-    NSDictionary<FSTBoxedTargetID *, FSTQueryData *> *activeTargets;
+- (const std::unordered_map<firebase::firestore::model::TargetId, FSTQueryData *> &)activeTargets;
 
 /** The expected set of active targets, keyed by target ID. */
-@property(nonatomic, strong, readwrite)
-    NSDictionary<FSTBoxedTargetID *, FSTQueryData *> *expectedActiveTargets;
+- (const std::unordered_map<firebase::firestore::model::TargetId, FSTQueryData *> &)
+    expectedActiveTargets;
+
+- (void)setExpectedActiveTargets:
+    (const std::unordered_map<firebase::firestore::model::TargetId, FSTQueryData *> &)targets;
 
 @end
 

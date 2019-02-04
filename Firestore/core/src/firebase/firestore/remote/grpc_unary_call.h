@@ -27,7 +27,10 @@
 #include "Firestore/core/src/firebase/firestore/util/status.h"
 #include "Firestore/core/src/firebase/firestore/util/statusor.h"
 #include "grpcpp/client_context.h"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdocumentation"
 #include "grpcpp/generic/generic_stub.h"
+#pragma clang diagnostic pop
 #include "grpcpp/support/byte_buffer.h"
 
 namespace firebase {
@@ -82,12 +85,13 @@ class GrpcUnaryCall : public GrpcCall {
   Metadata GetResponseHeaders() const override;
 
   /** For tests only */
-  grpc::ClientContext* context() {
+  grpc::ClientContext* context() override {
     return context_.get();
   }
 
  private:
   void Shutdown();
+  void MaybeUnregister();
 
   // See comments in `GrpcStream` on lifetime issues for gRPC objects.
   std::unique_ptr<grpc::ClientContext> context_;

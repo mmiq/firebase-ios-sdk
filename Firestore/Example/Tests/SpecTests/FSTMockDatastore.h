@@ -16,68 +16,93 @@
 
 #import <Foundation/Foundation.h>
 
-#import "Firestore/Source/Remote/FSTDatastore.h"
+#include <memory>
+#include <unordered_map>
 
 #include "Firestore/core/src/firebase/firestore/model/snapshot_version.h"
 #include "Firestore/core/src/firebase/firestore/model/types.h"
+#include "Firestore/core/src/firebase/firestore/remote/datastore.h"
+#include "Firestore/core/src/firebase/firestore/util/status.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface FSTMockDatastore : FSTDatastore
+namespace firebase {
+namespace firestore {
+namespace remote {
 
-/**
- * A count of the total number of requests sent to the watch stream since the beginning of the test
- * case.
- */
-@property(nonatomic) int watchStreamRequestCount;
+class MockWatchStream;
+class MockWriteStream;
 
-/**
- * A count of the total number of requests sent to the write stream since the beginning of the test
- * case.
- */
-@property(nonatomic) int writeStreamRequestCount;
+class MockDatastore : public Datastore {
+ public:
+  MockDatastore(const core::DatabaseInfo& database_info,
+                util::AsyncQueue* worker_queue,
+                auth::CredentialsProvider* credentials);
 
-#pragma mark - Watch Stream manipulation.
+  std::shared_ptr<WatchStream> CreateWatchStream(WatchStreamCallback* callback) override;
+  std::shared_ptr<WriteStream> CreateWriteStream(id<FSTWriteStreamDelegate> delegate) override;
 
-/** Injects an Added WatchChange containing the given targetIDs. */
-- (void)writeWatchTargetAddedWithTargetIDs:(NSArray<FSTBoxedTargetID *> *)targetIDs;
+  /**
+   * A count of the total number of requests sent to the watch stream since the beginning of the
+   * test case.
+   */
+  int watch_stream_request_count() const {
+    return watch_stream_request_count_;
+  }
+  /**
+   * A count of the total number of requests sent to the write stream since the beginning of the
+   * test case.
+   */
+  int write_stream_request_count() const {
+    return write_stream_request_count_;
+  }
 
-/** Injects an Added WatchChange that marks the given targetIDs current. */
-- (void)writeWatchCurrentWithTargetIDs:(NSArray<FSTBoxedTargetID *> *)targetIDs
-                       snapshotVersion:
-                           (const firebase::firestore::model::SnapshotVersion &)snapshotVersion
-                           resumeToken:(NSData *)resumeToken;
+  void IncrementWatchStreamRequests() {
+    ++watch_stream_request_count_;
+  }
+  void IncrementWriteStreamRequests() {
+    ++write_stream_request_count_;
+  }
 
-/** Injects a WatchChange as though it had come from the backend. */
-- (void)writeWatchChange:(FSTWatchChange *)change
-         snapshotVersion:(const firebase::firestore::model::SnapshotVersion &)snap;
+  /** Injects a WatchChange as though it had come from the backend. */
+  void WriteWatchChange(const WatchChange& change, const model::SnapshotVersion& snap);
+  /** Injects a stream failure as though it had come from the backend. */
+  void FailWatchStream(const util::Status& error);
 
-/** Injects a stream failure as though it had come from the backend. */
-- (void)failWatchStreamWithError:(NSError *)error;
+  /** Returns the set of active targets on the watch stream. */
+  const std::unordered_map<model::TargetId, FSTQueryData*>& ActiveTargets() const;
+  /** Helper method to expose watch stream state to verify in tests. */
+  bool IsWatchStreamOpen() const;
 
-/** Returns the set of active targets on the watch stream. */
-- (NSDictionary<FSTBoxedTargetID *, FSTQueryData *> *)activeTargets;
+  /**
+   * Returns the next write that was "sent to the backend", failing if there are no queued sent
+   */
+  NSArray<FSTMutation*>* NextSentWrite();
+  /** Returns the number of writes that have been sent to the backend but not waited on yet. */
+  int WritesSent() const;
 
-/** Helper method to expose watch stream state to verify in tests. */
-- (BOOL)isWatchStreamOpen;
+  /** Injects a write ack as though it had come from the backend in response to a write. */
+  void AckWrite(const model::SnapshotVersion& version, NSArray<FSTMutationResult*>* results);
 
-#pragma mark - Write Stream manipulation.
+  /** Injects a stream failure as though it had come from the backend. */
+  void FailWrite(const util::Status& error);
 
-/**
- * Returns the next write that was "sent to the backend", failing if there are no queued sent
- */
-- (NSArray<FSTMutation *> *)nextSentWrite;
+ private:
+  // These are all passed to the base class; however, making `MockDatastore` store the pointers
+  // reduces the number of test-only methods in `Datastore`.
+  const core::DatabaseInfo* database_info_ = nullptr;
+  util::AsyncQueue* worker_queue_ = nullptr;
+  auth::CredentialsProvider* credentials_ = nullptr;
 
-/** Returns the number of writes that have been sent to the backend but not waited on yet. */
-- (int)writesSent;
+  std::shared_ptr<MockWatchStream> watch_stream_;
+  std::shared_ptr<MockWriteStream> write_stream_;
 
-/** Injects a write ack as though it had come from the backend in response to a write. */
-- (void)ackWriteWithVersion:(const firebase::firestore::model::SnapshotVersion &)commitVersion
-            mutationResults:(NSArray<FSTMutationResult *> *)results;
+  int watch_stream_request_count_ = 0;
+  int write_stream_request_count_ = 0;
+};
 
-/** Injects a stream failure as though it had come from the backend. */
-- (void)failWriteWithError:(NSError *_Nullable)error;
-
-@end
+}  // namespace remote
+}  // namespace firestore
+}  // namespace firebase
 
 NS_ASSUME_NONNULL_END

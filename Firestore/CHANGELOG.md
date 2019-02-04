@@ -1,5 +1,69 @@
 # Unreleased
 
+# v1.0.1
+- [changed] Internal improvements.
+
+# v1.0.0
+- [changed] **Breaking change:** The `areTimestampsInSnapshotsEnabled` setting
+  is now enabled by default. Timestamp fields that read from a
+  `FIRDocumentSnapshot` will be returned as `FIRTimestamp` objects instead of
+  `NSDate` objects. Update any code that expects to recive a `NSDate` object.
+  See [the reference
+  documentation](https://firebase.google.com/docs/reference/ios/firebasefirestore/api/reference/Classes/FIRFirestoreSettings#/c:objc(cs)FIRFirestoreSettings(py)timestampsInSnapshotsEnabled)
+  for more details.
+- [changed] **Breaking change:** `FIRTransaction.getDocument()` has been changed
+  to return a non-nil `FIRDocumentSnapshot` with `exists` equal to `false` if
+  the document does not exist (instead of returning a nil
+  `FIRDocumentSnapshot`).  Code that includes `if (snapshot) { ... }` must be
+  changed to `if (snapshot.exists) { ... }`.
+- [fixed] Fixed a crash that could happen when the app is shut down after
+  a write has been sent to the server but before it has been received on
+  a listener (#2237).
+- [changed] Firestore no longer bundles a copy of the gRPC certificates, now
+  that the gRPC-C++ CocoaPod includes them. CocoaPods users should be updated
+  automatically. Carthage users should follow the [updated
+  instructions](https://github.com/firebase/firebase-ios-sdk/blob/master/Carthage.md)
+  to get `gRPCCertificates.bundle` from the correct location.
+
+# v0.16.1
+- [fixed] Offline persistence now properly records schema downgrades. This is a
+  forward-looking change that allows all subsequent versions to safely downgrade
+  to this version. Some other versions might be safe to downgrade to, if you can
+  determine there haven't been any schema migrations between them. For example,
+  downgrading from v0.16.1 to v0.15.0 is safe because there have been no schema
+  changes between these releases.
+- [fixed] Fixed an issue where gRPC would crash if shut down multiple times
+  (#2146).
+
+# v0.16.0
+- [changed] Added a garbage collection process to on-disk persistence that
+  removes older documents. This is enabled by default, and the SDK will attempt
+  to periodically clean up older, unused documents once the on-disk cache passes
+  a threshold size (default: 100 MB). This threshold can be configured by
+  setting `FIRFirestoreSettings.cacheSizeBytes`. It must be set to a minimum of
+  1 MB. The garbage collection process can be disabled entirely by setting
+  `FIRFirestoreSettings.cacheSizeBytes` to `kFIRFirestoreCacheSizeUnlimited`.
+
+# v0.15.0
+- [changed] Changed how the SDK handles locally-updated documents while syncing
+  those updates with Cloud Firestore servers. This can lead to slight behavior
+  changes and may affect the `SnapshotMetadata.hasPendingWrites` metadata flag.
+- [changed] Eliminated superfluous update events for locally cached documents
+  that are known to lag behind the server version. Instead, the SDK buffers
+  these events until the client has caught up with the server.
+- [changed] Moved from Objective-C gRPC framework to gRPC C++. If you're
+  manually tracking dependencies, the `gRPC`, `gRPC-ProtoRPC`, and
+  `gRPC-RxLibrary` frameworks have been replaced with `gRPC-C++`. While we
+  don't anticipate any issues, please [report any issues with network
+  behavior](https://github.com/firebase/firebase-ios-sdk/issues/new) you
+  experience. (#1968)
+
+# v0.14.0
+- [fixed] Fixed compilation in C99 and C++11 modes without GNU extensions.
+
+# v0.13.6
+- [changed] Internal improvements.
+
 # v0.13.5
 - [changed] Some SDK errors that represent common mistakes (such as permission
   denied or a missing index) will automatically be logged as a warning in

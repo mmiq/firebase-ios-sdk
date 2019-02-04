@@ -34,6 +34,7 @@ namespace firestore {
 namespace remote {
 namespace bridge {
 
+using core::DatabaseInfo;
 using model::DocumentKey;
 using model::TargetId;
 using model::SnapshotVersion;
@@ -60,10 +61,15 @@ std::string ToHexString(const grpc::ByteBuffer& buffer) {
   return output.str();
 }
 
-NSData* ConvertToNsData(const grpc::ByteBuffer& buffer) {
+NSData* ConvertToNsData(const grpc::ByteBuffer& buffer, NSError** out_error) {
   std::vector<grpc::Slice> slices;
   grpc::Status status = buffer.Dump(&slices);
-  HARD_ASSERT(status.ok(), "Trying to convert an invalid grpc::ByteBuffer");
+  if (!status.ok()) {
+    *out_error =
+        MakeNSError(Status{FirestoreErrorCode::Internal,
+                           "Trying to convert an invalid grpc::ByteBuffer"});
+    return nil;
+  }
 
   if (slices.size() == 1) {
     return [NSData dataWithBytes:slices.front().begin()
@@ -86,18 +92,21 @@ grpc::ByteBuffer ConvertToByteBuffer(NSData* data) {
 template <typename Proto>
 Proto* ToProto(const grpc::ByteBuffer& message, Status* out_status) {
   NSError* error = nil;
-  Proto* proto = [Proto parseFromData:ConvertToNsData(message) error:&error];
+  NSData* data = ConvertToNsData(message, &error);
   if (!error) {
-    *out_status = Status::OK();
-    return proto;
+    Proto* proto = [Proto parseFromData:data error:&error];
+    if (!error) {
+      *out_status = Status::OK();
+      return proto;
+    }
   }
 
-  std::string error_description = StringFormat(
-      "Unable to parse response from the server.\n"
-      "Underlying error: %s\n"
-      "Expected class: %s\n"
-      "Received value: %s\n",
-      error, [Proto class], ToHexString(message));
+  std::string error_description =
+      StringFormat("Unable to parse response from the server.\n"
+                   "Underlying error: %s\n"
+                   "Expected class: %s\n"
+                   "Received value: %s\n",
+                   error, [Proto class], ToHexString(message));
 
   *out_status = {FirestoreErrorCode::Internal, error_description};
   return nil;
@@ -138,7 +147,7 @@ GCFSListenResponse* WatchStreamSerializer::ParseResponse(
   return ToProto<GCFSListenResponse>(message, out_status);
 }
 
-FSTWatchChange* WatchStreamSerializer::ToWatchChange(
+std::unique_ptr<WatchChange> WatchStreamSerializer::ToWatchChange(
     GCFSListenResponse* proto) const {
   return [serializer_ decodedWatchChange:proto];
 }
@@ -223,6 +232,11 @@ NSString* WriteStreamSerializer::Describe(GCFSWriteResponse* response) {
 
 // DatastoreSerializer
 
+DatastoreSerializer::DatastoreSerializer(const DatabaseInfo& database_info)
+    : serializer_{[[FSTSerializerBeta alloc]
+          initWithDatabaseID:&database_info.database_id()]} {
+}
+
 GCFSCommitRequest* DatastoreSerializer::CreateCommitRequest(
     NSArray<FSTMutation*>* mutations) const {
   GCFSCommitRequest* request = [GCFSCommitRequest message];
@@ -286,21 +300,6 @@ FSTMaybeDocument* DatastoreSerializer::ToMaybeDocument(
   return [serializer_ decodedMaybeDocumentFromBatch:response];
 }
 
-// WatchStreamDelegate
-
-void WatchStreamDelegate::NotifyDelegateOnOpen() {
-  [delegate_ watchStreamDidOpen];
-}
-
-void WatchStreamDelegate::NotifyDelegateOnChange(
-    FSTWatchChange* change, const model::SnapshotVersion& snapshot_version) {
-  [delegate_ watchStreamDidChange:change snapshotVersion:snapshot_version];
-}
-
-void WatchStreamDelegate::NotifyDelegateOnClose(const Status& status) {
-  [delegate_ watchStreamWasInterruptedWithError:MakeNSError(status)];
-}
-
 // WriteStreamDelegate
 
 void WriteStreamDelegate::NotifyDelegateOnOpen() {
@@ -319,7 +318,7 @@ void WriteStreamDelegate::NotifyDelegateOnCommit(
 }
 
 void WriteStreamDelegate::NotifyDelegateOnClose(const Status& status) {
-  [delegate_ writeStreamWasInterruptedWithError:MakeNSError(status)];
+  [delegate_ writeStreamWasInterruptedWithError:status];
 }
 
 }  // namespace bridge

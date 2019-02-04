@@ -23,6 +23,7 @@
 
 #import <UIKit/UIKit.h>
 
+#import "FIRMessagingAnalytics.h"
 #import "FIRMessagingClient.h"
 #import "FIRMessagingConstants.h"
 #import "FIRMessagingContextManagerService.h"
@@ -38,7 +39,12 @@
 #import "FIRMessagingVersionUtilities.h"
 #import "FIRMessaging_Private.h"
 
+#import <FirebaseAnalyticsInterop/FIRAnalyticsInterop.h>
 #import <FirebaseCore/FIRAppInternal.h>
+#import <FirebaseCore/FIRComponent.h>
+#import <FirebaseCore/FIRComponentContainer.h>
+#import <FirebaseCore/FIRDependency.h>
+#import <FirebaseCore/FIRLibrary.h>
 #import <FirebaseInstanceID/FirebaseInstanceID.h>
 #import <GoogleUtilities/GULReachabilityChecker.h>
 
@@ -141,38 +147,47 @@ NSString *const kFIRMessagingPlistAutoInitEnabled =
 /// which can happen if the user inadvertently calls `appDidReceiveMessage` along with us
 /// calling it implicitly during swizzling.
 @property(nonatomic, readwrite, strong) NSMutableSet *loggedMessageIDs;
+@property(nonatomic, readwrite, strong) id<FIRAnalyticsInterop> _Nullable analytics;
 
-- (instancetype)initWithInstanceID:(FIRInstanceID *)instanceID
-                      userDefaults:(NSUserDefaults *)defaults NS_DESIGNATED_INITIALIZER;
+@end
 
+// Messaging doesn't provide any functionality to other components,
+// so it provides a private, empty protocol that it conforms to and use it for registration.
+
+@protocol FIRMessagingInstanceProvider
+@end
+
+@interface FIRMessaging () <FIRMessagingInstanceProvider, FIRLibrary>
 @end
 
 @implementation FIRMessaging
 
 + (FIRMessaging *)messaging {
-  static FIRMessaging *messaging;
+  FIRApp *defaultApp = [FIRApp defaultApp];  // Missing configure will be logged here.
+  id<FIRMessagingInstanceProvider> instance =
+      FIR_COMPONENT(FIRMessagingInstanceProvider, defaultApp.container);
+
+  // We know the instance coming from the container is a FIRMessaging instance, cast it and move on.
+  FIRMessaging *messaging = (FIRMessaging *)instance;
+
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
-    messaging = [[FIRMessaging alloc] initPrivately];
     [messaging start];
   });
   return messaging;
 }
 
-- (instancetype)initWithInstanceID:(FIRInstanceID *)instanceID
-                      userDefaults:(NSUserDefaults *)defaults {
+- (instancetype)initWithAnalytics:(nullable id<FIRAnalyticsInterop>)analytics
+                   withInstanceID:(FIRInstanceID *)instanceID
+                 withUserDefaults:(NSUserDefaults *)defaults {
   self = [super init];
   if (self != nil) {
     _loggedMessageIDs = [NSMutableSet set];
     _instanceID = instanceID;
     _messagingUserDefaults = defaults;
+    _analytics = analytics;
   }
   return self;
-}
-
-- (instancetype)initPrivately {
-  return [self initWithInstanceID:[FIRInstanceID instanceID]
-                     userDefaults:[NSUserDefaults standardUserDefaults]];
 }
 
 - (void)dealloc {
@@ -184,24 +199,39 @@ NSString *const kFIRMessagingPlistAutoInitEnabled =
 #pragma mark - Config
 
 + (void)load {
-  [[NSNotificationCenter defaultCenter] addObserver:self
-                                           selector:@selector(didReceiveConfigureSDKNotification:)
-                                               name:kFIRAppReadyToConfigureSDKNotification
-                                             object:nil];
+  [FIRApp registerInternalLibrary:(Class<FIRLibrary>)self
+                 withName:@"fire-fcm"
+              withVersion:FIRMessagingCurrentLibraryVersion()];
 }
 
-+ (void)didReceiveConfigureSDKNotification:(NSNotification *)notification {
-  NSDictionary *appInfoDict = notification.userInfo;
-  NSNumber *isDefaultApp = appInfoDict[kFIRAppIsDefaultAppKey];
-  if (![isDefaultApp boolValue]) {
++ (nonnull NSArray<FIRComponent *> *)componentsToRegister {
+  FIRDependency *analyticsDep =
+      [FIRDependency dependencyWithProtocol:@protocol(FIRAnalyticsInterop) isRequired:NO];
+  FIRComponentCreationBlock creationBlock =
+      ^id _Nullable(FIRComponentContainer *container, BOOL *isCacheable) {
+    // Ensure it's cached so it returns the same instance every time messaging is called.
+    *isCacheable = YES;
+    id<FIRAnalyticsInterop> analytics = FIR_COMPONENT(FIRAnalyticsInterop, container);
+        return [[FIRMessaging alloc] initWithAnalytics:analytics
+                                        withInstanceID:[FIRInstanceID instanceID]
+                                      withUserDefaults:[NSUserDefaults standardUserDefaults]];
+  };
+  FIRComponent *messagingProvider =
+      [FIRComponent componentWithProtocol:@protocol(FIRMessagingInstanceProvider)
+                      instantiationTiming:FIRInstantiationTimingLazy
+                             dependencies:@[ analyticsDep ]
+                           creationBlock:creationBlock];
+
+  return @[ messagingProvider ];
+}
+
++ (void)configureWithApp:(FIRApp *)app {
+  if (!app.isDefaultApp) {
     // Only configure for the default FIRApp.
     FIRMessagingLoggerDebug(kFIRMessagingMessageCodeFIRApp001,
                             @"Firebase Messaging only works with the default app.");
     return;
   }
-
-  NSString *appName = appInfoDict[kFIRAppNameKey];
-  FIRApp *app = [FIRApp appNamed:appName];
   [[FIRMessaging messaging] configureMessaging:app];
 }
 
@@ -279,7 +309,7 @@ NSString *const kFIRMessagingPlistAutoInitEnabled =
 }
 
 - (void)setupReceiver {
-  self.receiver = [[FIRMessagingReceiver alloc] init];
+  self.receiver = [[FIRMessagingReceiver alloc] initWithUserDefaults:self.messagingUserDefaults];
   self.receiver.delegate = self;
 }
 
@@ -367,16 +397,7 @@ NSString *const kFIRMessagingPlistAutoInitEnabled =
   }
 
   if (!isOldMessage) {
-    Class firMessagingLogClass = NSClassFromString(@"FIRMessagingLog");
-    SEL logMessageSelector = NSSelectorFromString(@"logMessage:");
-
-    if ([firMessagingLogClass respondsToSelector:logMessageSelector]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-      [firMessagingLogClass performSelector:logMessageSelector
-                                 withObject:message];
-    }
-#pragma clang diagnostic pop
+    [FIRMessagingAnalytics logMessage:message toAnalytics:_analytics];
     [self handleContextManagerMessage:message];
     [self handleIncomingLinkIfNeededFromMessage:message];
   }

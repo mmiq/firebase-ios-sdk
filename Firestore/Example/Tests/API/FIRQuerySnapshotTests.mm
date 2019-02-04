@@ -31,6 +31,7 @@
 #include "Firestore/core/src/firebase/firestore/util/string_apple.h"
 
 namespace util = firebase::firestore::util;
+using firebase::firestore::core::DocumentViewChangeType;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -52,12 +53,12 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)testEquals {
   FIRQuerySnapshot *foo = FSTTestQuerySnapshot("foo", @{}, @{@"a" : @{@"a" : @1}}, YES, NO);
   FIRQuerySnapshot *fooDup = FSTTestQuerySnapshot("foo", @{}, @{@"a" : @{@"a" : @1}}, YES, NO);
-  FIRQuerySnapshot *differentPath = FSTTestQuerySnapshot("bar", @{},
-                                                         @{@"a" : @{@"a" : @1}}, YES, NO);
-  FIRQuerySnapshot *differentDoc = FSTTestQuerySnapshot("foo",
-                                                        @{@"a" : @{@"b" : @1}}, @{}, YES, NO);
-  FIRQuerySnapshot *noPendingWrites = FSTTestQuerySnapshot("foo", @{},
-                                                           @{@"a" : @{@"a" : @1}}, NO, NO);
+  FIRQuerySnapshot *differentPath =
+      FSTTestQuerySnapshot("bar", @{}, @{@"a" : @{@"a" : @1}}, YES, NO);
+  FIRQuerySnapshot *differentDoc =
+      FSTTestQuerySnapshot("foo", @{@"a" : @{@"b" : @1}}, @{}, YES, NO);
+  FIRQuerySnapshot *noPendingWrites =
+      FSTTestQuerySnapshot("foo", @{}, @{@"a" : @{@"a" : @1}}, NO, NO);
   FIRQuerySnapshot *fromCache = FSTTestQuerySnapshot("foo", @{}, @{@"a" : @{@"a" : @1}}, YES, YES);
   XCTAssertEqualObjects(foo, fooDup);
   XCTAssertNotEqualObjects(foo, differentPath);
@@ -73,17 +74,17 @@ NS_ASSUME_NONNULL_BEGIN
 }
 
 - (void)testIncludeMetadataChanges {
-  FSTDocument *doc1Old = FSTTestDoc("foo/bar", 1, @{@"a" : @"b"}, YES);
-  FSTDocument *doc1New = FSTTestDoc("foo/bar", 1, @{@"a" : @"b"}, NO);
+  FSTDocument *doc1Old = FSTTestDoc("foo/bar", 1, @{@"a" : @"b"}, FSTDocumentStateLocalMutations);
+  FSTDocument *doc1New = FSTTestDoc("foo/bar", 1, @{@"a" : @"b"}, FSTDocumentStateSynced);
 
-  FSTDocument *doc2Old = FSTTestDoc("foo/baz", 1, @{@"a" : @"b"}, NO);
-  FSTDocument *doc2New = FSTTestDoc("foo/baz", 1, @{@"a" : @"c"}, NO);
+  FSTDocument *doc2Old = FSTTestDoc("foo/baz", 1, @{@"a" : @"b"}, FSTDocumentStateSynced);
+  FSTDocument *doc2New = FSTTestDoc("foo/baz", 1, @{@"a" : @"c"}, FSTDocumentStateSynced);
 
   FSTDocumentSet *oldDocuments = FSTTestDocSet(FSTDocumentComparatorByKey, @[ doc1Old, doc2Old ]);
   FSTDocumentSet *newDocuments = FSTTestDocSet(FSTDocumentComparatorByKey, @[ doc2New, doc2New ]);
   NSArray<FSTDocumentViewChange *> *documentChanges = @[
-    [FSTDocumentViewChange changeWithDocument:doc1New type:FSTDocumentViewChangeTypeMetadata],
-    [FSTDocumentViewChange changeWithDocument:doc2New type:FSTDocumentViewChangeTypeModified],
+    [FSTDocumentViewChange changeWithDocument:doc1New type:DocumentViewChangeType::kMetadata],
+    [FSTDocumentViewChange changeWithDocument:doc2New type:DocumentViewChangeType::kModified],
   ];
 
   FIRFirestore *firestore = FSTTestFirestore();
@@ -93,10 +94,11 @@ NS_ASSUME_NONNULL_BEGIN
                                                             oldDocuments:oldDocuments
                                                          documentChanges:documentChanges
                                                                fromCache:NO
-                                                        hasPendingWrites:NO
-                                                        syncStateChanged:YES];
-  FIRSnapshotMetadata *metadata =
-      [FIRSnapshotMetadata snapshotMetadataWithPendingWrites:NO fromCache:NO];
+                                                             mutatedKeys:DocumentKeySet {}
+                                                        syncStateChanged:YES
+                                                 excludesMetadataChanges:NO];
+  FIRSnapshotMetadata *metadata = [FIRSnapshotMetadata snapshotMetadataWithPendingWrites:NO
+                                                                               fromCache:NO];
   FIRQuerySnapshot *snapshot = [FIRQuerySnapshot snapshotWithFirestore:firestore
                                                          originalQuery:query
                                                               snapshot:viewSnapshot
@@ -105,11 +107,13 @@ NS_ASSUME_NONNULL_BEGIN
   FIRQueryDocumentSnapshot *doc1Snap = [FIRQueryDocumentSnapshot snapshotWithFirestore:firestore
                                                                            documentKey:doc1New.key
                                                                               document:doc1New
-                                                                             fromCache:NO];
+                                                                             fromCache:NO
+                                                                      hasPendingWrites:NO];
   FIRQueryDocumentSnapshot *doc2Snap = [FIRQueryDocumentSnapshot snapshotWithFirestore:firestore
                                                                            documentKey:doc2New.key
                                                                               document:doc2New
-                                                                             fromCache:NO];
+                                                                             fromCache:NO
+                                                                      hasPendingWrites:NO];
 
   NSArray<FIRDocumentChange *> *changesWithoutMetadata = @[
     [[FIRDocumentChange alloc] initWithType:FIRDocumentChangeTypeModified

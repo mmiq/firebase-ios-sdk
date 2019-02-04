@@ -23,21 +23,23 @@
 
 #import <Foundation/Foundation.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "Firestore/core/src/firebase/firestore/core/database_info.h"
 #include "Firestore/core/src/firebase/firestore/model/snapshot_version.h"
 #include "Firestore/core/src/firebase/firestore/model/types.h"
+#include "Firestore/core/src/firebase/firestore/remote/watch_change.h"
 #include "Firestore/core/src/firebase/firestore/util/status.h"
 #include "grpcpp/support/byte_buffer.h"
 
-#import "Firestore/Protos/objc/google/firestore/v1beta1/Firestore.pbobjc.h"
+#import "Firestore/Protos/objc/google/firestore/v1/Firestore.pbobjc.h"
 #import "Firestore/Source/Core/FSTTypes.h"
 #import "Firestore/Source/Local/FSTQueryData.h"
 #import "Firestore/Source/Model/FSTMutation.h"
 #import "Firestore/Source/Remote/FSTSerializerBeta.h"
 #import "Firestore/Source/Remote/FSTStream.h"
-#import "Firestore/Source/Remote/FSTWatchChange.h"
 
 namespace firebase {
 namespace firestore {
@@ -78,7 +80,7 @@ class WatchStreamSerializer {
    */
   GCFSListenResponse* ParseResponse(const grpc::ByteBuffer& message,
                                     util::Status* out_status) const;
-  FSTWatchChange* ToWatchChange(GCFSListenResponse* proto) const;
+  std::unique_ptr<WatchChange> ToWatchChange(GCFSListenResponse* proto) const;
   model::SnapshotVersion ToSnapshotVersion(GCFSListenResponse* proto) const;
 
   /** Creates a pretty-printed description of the proto for debugging. */
@@ -142,9 +144,7 @@ class WriteStreamSerializer {
  */
 class DatastoreSerializer {
  public:
-  explicit DatastoreSerializer(FSTSerializerBeta* serializer)
-      : serializer_{serializer} {
-  }
+  explicit DatastoreSerializer(const core::DatabaseInfo& database_info);
 
   GCFSCommitRequest* CreateCommitRequest(
       NSArray<FSTMutation*>* mutations) const;
@@ -161,7 +161,8 @@ class DatastoreSerializer {
   NSArray<FSTMaybeDocument*>* MergeLookupResponses(
       const std::vector<grpc::ByteBuffer>& responses,
       util::Status* out_status) const;
-  FSTMaybeDocument* ToMaybeDocument(GCFSBatchGetDocumentsResponse*) const;
+  FSTMaybeDocument* ToMaybeDocument(
+      GCFSBatchGetDocumentsResponse* response) const;
 
   FSTSerializerBeta* GetSerializer() {
     return serializer_;
@@ -169,22 +170,6 @@ class DatastoreSerializer {
 
  private:
   FSTSerializerBeta* serializer_;
-};
-
-/** A C++ bridge that invokes methods on an `FSTWatchStreamDelegate`. */
-class WatchStreamDelegate {
- public:
-  explicit WatchStreamDelegate(id<FSTWatchStreamDelegate> delegate)
-      : delegate_{delegate} {
-  }
-
-  void NotifyDelegateOnOpen();
-  void NotifyDelegateOnChange(FSTWatchChange* change,
-                              const model::SnapshotVersion& snapshot_version);
-  void NotifyDelegateOnClose(const util::Status& status);
-
- private:
-  id<FSTWatchStreamDelegate> delegate_;
 };
 
 /** A C++ bridge that invokes methods on an `FSTWriteStreamDelegate`. */
@@ -201,7 +186,7 @@ class WriteStreamDelegate {
   void NotifyDelegateOnClose(const util::Status& status);
 
  private:
-  id<FSTWriteStreamDelegate> delegate_;
+  __weak id<FSTWriteStreamDelegate> delegate_;
 };
 
 }  // namespace bridge

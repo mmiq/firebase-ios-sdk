@@ -25,11 +25,11 @@ set(
   firestore/local/target
   google/api/annotations
   google/api/http
-  google/firestore/v1beta1/common
-  google/firestore/v1beta1/document
-  google/firestore/v1beta1/firestore
-  google/firestore/v1beta1/query
-  google/firestore/v1beta1/write
+  google/firestore/v1/common
+  google/firestore/v1/document
+  google/firestore/v1/firestore
+  google/firestore/v1/query
+  google/firestore/v1/write
   google/rpc/status
   google/type/latlng
 )
@@ -67,7 +67,7 @@ endforeach()
 foreach(root ${PROTO_FILE_ROOTS} ${WELL_KNOWN_PROTO_FILE_ROOTS})
   list(
     APPEND NANOPB_GENERATED_SOURCES
-    ${OUTPUT_DIR}/nanopb/${root}.nanopb.c
+    ${OUTPUT_DIR}/nanopb/${root}.nanopb.cc
     ${OUTPUT_DIR}/nanopb/${root}.nanopb.h
   )
 endforeach()
@@ -111,13 +111,10 @@ endfunction()
 #
 # Libprotobuf Objective-C also includes the well-known protos so they must be
 # omitted here.
-#
-# The Objective-C client also uses the generated gRPC stubs for the Firestore
-# service.
 set(
   PROTOBUF_OBJC_GENERATED_SOURCES
-  ${OUTPUT_DIR}/objc/google/firestore/v1beta1/Firestore.pbrpc.h
-  ${OUTPUT_DIR}/objc/google/firestore/v1beta1/Firestore.pbrpc.m
+  ${OUTPUT_DIR}/objc/google/firestore/v1/Firestore.pbrpc.h
+  ${OUTPUT_DIR}/objc/google/firestore/v1/Firestore.pbrpc.m
 )
 foreach(root ${PROTO_FILE_ROOTS})
   get_filename_component(dir ${root} DIRECTORY)
@@ -284,12 +281,10 @@ add_custom_command(
     ${CMAKE_CURRENT_SOURCE_DIR}/build_protos.py
       --objc
       --protoc=$<TARGET_FILE:protoc>
-      --protoc_gen_grpc=$<TARGET_FILE:grpc_objective_c_plugin>
       --output_dir=${OUTPUT_DIR}
       ${PROTO_INCLUDES}
   VERBATIM
   DEPENDS
-    grpc_objective_c_plugin
     protoc
     ${CMAKE_CURRENT_SOURCE_DIR}/build_protos.py
     ${PROTO_FILES}

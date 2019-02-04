@@ -76,8 +76,8 @@ static CGFloat LandScapePaddingBetweenImageAndTextColumn = 24;
                                 displayDelegate:
                                     (id<FIRInAppMessagingDisplayDelegate>)displayDelegate
                                     timeFetcher:(id<FIDTimeFetcher>)timeFetcher {
-  UIStoryboard *storyboard =
-      [UIStoryboard storyboardWithName:@"FIRInAppMessageDisplayStoryboard" bundle:resourceBundle];
+  UIStoryboard *storyboard = [UIStoryboard storyboardWithName:@"FIRInAppMessageDisplayStoryboard"
+                                                       bundle:resourceBundle];
 
   if (storyboard == nil) {
     FIRLogError(kFIRLoggerInAppMessagingDisplay, @"I-FID300001",
@@ -184,12 +184,12 @@ struct TitleBodyButtonHeightInfo {
                                                             withMaxColumnHeight:(CGFloat)maxHeight {
   struct TitleBodyButtonHeightInfo resultHeightInfo;
 
-  CGFloat titleFitHeight =
-      [self determineTextAreaViewFitHeightForView:self.titleLabel withWidth:displayWidth];
-  CGFloat bodyFitHeight =
-      self.modalDisplayMessage.bodyText.length == 0
-          ? 0
-          : [self determineTextAreaViewFitHeightForView:self.bodyTextView withWidth:displayWidth];
+  CGFloat titleFitHeight = [self determineTextAreaViewFitHeightForView:self.titleLabel
+                                                             withWidth:displayWidth];
+  CGFloat bodyFitHeight = self.modalDisplayMessage.bodyText.length == 0
+                              ? 0
+                              : [self determineTextAreaViewFitHeightForView:self.bodyTextView
+                                                                  withWidth:displayWidth];
 
   CGFloat bodyFitHeightWithPadding = self.modalDisplayMessage.bodyText.length == 0
                                          ? 0
@@ -292,8 +292,8 @@ struct TitleBodyButtonHeightInfo {
                                             heightCalcReference - heights.totaColumnlHeight -
                                                 self.imageTopToTitleBottomInPortraitMode.constant);
 
-    CGSize imageDisplaySize =
-        [self fitImageInRegionSize:imageAvailableSpace withImageSize:image.size];
+    CGSize imageDisplaySize = [self fitImageInRegionSize:imageAvailableSpace
+                                           withImageSize:image.size];
 
     FIRLogDebug(kFIRLoggerInAppMessagingDisplay, @"I-FID300005",
                 @"Given actual image size %@ and available image display size %@, the actual"
@@ -406,14 +406,15 @@ struct TitleBodyButtonHeightInfo {
 - (void)viewDidLayoutSubviews {
   [super viewDidLayoutSubviews];
 
-  if (self.buttonBottomToContainerBottomInPortraitMode.active) {
-    FIRLogDebug(kFIRLoggerInAppMessagingDisplay, @"I-FID300009",
-                @"Modal view rendered in portrait mode");
-    [self layoutFineTuneInPortraitMode];
-  } else {
+  if (self.traitCollection.horizontalSizeClass == UIUserInterfaceSizeClassRegular ||
+      self.traitCollection.verticalSizeClass == UIUserInterfaceSizeClassCompact) {
     FIRLogDebug(kFIRLoggerInAppMessagingDisplay, @"I-FID300010",
                 @"Modal view rendered in landscape mode");
     [self layoutFineTuneInLandscapeMode];
+  } else {
+    FIRLogDebug(kFIRLoggerInAppMessagingDisplay, @"I-FID300009",
+                @"Modal view rendered in portrait mode");
+    [self layoutFineTuneInPortraitMode];
   }
 
   // always scroll to the top in case the body area is scrollable
