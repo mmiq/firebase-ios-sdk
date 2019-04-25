@@ -65,6 +65,7 @@ using firebase::firestore::FirestoreErrorCode;
 using firebase::firestore::model::DatabaseId;
 using firebase::firestore::model::FieldMask;
 using firebase::firestore::model::FieldTransform;
+using firebase::firestore::model::FieldValue;
 using firebase::firestore::model::Precondition;
 using firebase::firestore::model::SnapshotVersion;
 using firebase::firestore::remote::DocumentWatchChange;
@@ -386,7 +387,7 @@ NS_ASSUME_NONNULL_BEGIN
       "docs/1", @{@"a" : @"b", @"num" : @1, @"some.de\\\\ep.th\\ing'" : @2}, {});
   GCFSWrite *proto = [GCFSWrite message];
   proto.update = [self.serializer encodedDocumentWithFields:mutation.value key:mutation.key];
-  proto.updateMask = [self.serializer encodedFieldMask:mutation.fieldMask];
+  proto.updateMask = [self.serializer encodedFieldMask:*(mutation.fieldMask)];
   proto.currentDocument.exists = YES;
 
   [self assertRoundTripForMutation:mutation proto:proto];
@@ -476,7 +477,7 @@ NS_ASSUME_NONNULL_BEGIN
                                                        commitVersion:commitVersion];
 
   XCTAssertEqual(result.version, updateVersion);
-  XCTAssertEqualObjects(result.transformResults, @[ [FSTStringValue stringValue:@"result"] ]);
+  XCTAssertEqualObjects(result.transformResults, @[ FieldValue::FromString("result").Wrap() ]);
 }
 
 - (void)testDecodesDeleteMutationResult {

@@ -27,7 +27,7 @@ USAGE: $0 product [platform] [method]
 product can be one of:
   Firebase
   Firestore
-  InAppMessagingDisplay
+  InAppMessaging
   SymbolCollision
 
 platform can be one of:
@@ -69,6 +69,7 @@ fi
 # Runs xcodebuild with the given flags, piping output to xcpretty
 # If xcodebuild fails with known error codes, retries once.
 function RunXcodebuild() {
+  echo xcodebuild "$@"
 
   xcodebuild "$@" | xcpretty; result=$?
   if [[ $result == 65 ]]; then
@@ -115,6 +116,7 @@ xcb_flags+=(
   ONLY_ACTIVE_ARCH=YES
   CODE_SIGNING_REQUIRED=NO
   CODE_SIGNING_ALLOWED=YES
+  COMPILER_INDEX_STORE_ENABLE=NO
 )
 
 # TODO(varconst): --warn-unused-vars - right now, it makes the log overflow on
@@ -183,15 +185,15 @@ case "$product-$method-$platform" in
         test
 
     if [[ $platform == 'iOS' ]]; then
-      RunXcodebuild \
-          -workspace 'Functions/Example/FirebaseFunctions.xcworkspace' \
-          -scheme "FirebaseFunctions_Tests" \
+      # Run integration tests (not allowed on PRs)
+      if [ "$TRAVIS_PULL_REQUEST" == "false" ]; then
+        RunXcodebuild \
+          -workspace 'Example/Firebase.xcworkspace' \
+          -scheme "Auth_ApiTests" \
           "${xcb_flags[@]}" \
           build \
           test
 
-      # Run integration tests (not allowed on PRs)
-      if [ "$TRAVIS_PULL_REQUEST" == "false" ]; then
         RunXcodebuild \
           -workspace 'Example/Firebase.xcworkspace' \
           -scheme "Storage_IntegrationTests_iOS" \
@@ -218,21 +220,28 @@ case "$product-$method-$platform" in
           "${xcb_flags[@]}" \
           build \
           test
-
-      cd Functions/Example
-      sed -i -e 's/use_frameworks/\#use_frameworks/' Podfile
-      pod update --no-repo-update
-      cd ../..
-      RunXcodebuild \
-          -workspace 'Functions/Example/FirebaseFunctions.xcworkspace' \
-          -scheme "FirebaseFunctions_Tests" \
-          "${xcb_flags[@]}" \
-          build \
-          test
     fi
     ;;
 
-  InAppMessagingDisplay-xcodebuild-iOS)
+  InAppMessaging-xcodebuild-iOS)
+    RunXcodebuild \
+        -workspace 'InAppMessaging/Example/InAppMessaging-Example-iOS.xcworkspace'  \
+        -scheme 'InAppMessaging_Example_iOS' \
+        "${xcb_flags[@]}" \
+        build \
+        test
+
+    cd InAppMessaging/Example
+    sed -i -e 's/use_frameworks/\#use_frameworks/' Podfile
+    pod update --no-repo-update
+    cd ../..
+    RunXcodebuild \
+        -workspace 'InAppMessaging/Example/InAppMessaging-Example-iOS.xcworkspace'  \
+        -scheme 'InAppMessaging_Example_iOS' \
+        "${xcb_flags[@]}" \
+        build \
+        test
+
     # Run UI tests on both iPad and iPhone simulators
     # TODO: Running two destinations from one xcodebuild command stopped working with Xcode 10.
     # Consider separating static library tests to a separate job.
@@ -295,7 +304,22 @@ case "$product-$method-$platform" in
         -scheme "Firestore_IntegrationTests_$platform" \
         "${xcb_flags[@]}" \
         build
+    ;;
 
+  Firestore-xcodebuild-macOS | Firestore-xcodebuild-tvOS)
+    # TODO(wilhuff): Combine with above once all targets exist
+    RunXcodebuild \
+        -workspace 'Firestore/Example/Firestore.xcworkspace' \
+        -scheme "Firestore_Tests_$platform" \
+        "${xcb_flags[@]}" \
+        build \
+        test
+
+    RunXcodebuild \
+        -workspace 'Firestore/Example/Firestore.xcworkspace' \
+        -scheme "Firestore_IntegrationTests_$platform" \
+        "${xcb_flags[@]}" \
+        build
     ;;
 
   Firestore-cmake-macOS)
@@ -315,6 +339,45 @@ case "$product-$method-$platform" in
         -scheme "SymbolCollisionTest" \
         "${xcb_flags[@]}" \
         build
+    ;;
+
+  GoogleDataTransport-xcodebuild-iOS)
+    RunXcodebuild \
+        -workspace 'GoogleDataTransport/gen/GoogleDataTransport/GoogleDataTransport.xcworkspace' \
+        -scheme "GoogleDataTransport-Unit-Tests-Unit" \
+        "${xcb_flags[@]}" \
+        build \
+        test
+
+    RunXcodebuild \
+        -workspace 'GoogleDataTransport/gen/GoogleDataTransport/GoogleDataTransport.xcworkspace' \
+        -scheme "GoogleDataTransport-Unit-Tests-Integration" \
+        "${xcb_flags[@]}" \
+        build \
+        test
+
+    RunXcodebuild \
+        -workspace 'GoogleDataTransport/gen/GoogleDataTransport/GoogleDataTransport.xcworkspace' \
+        -scheme "GoogleDataTransport-Unit-Tests-Lifecycle" \
+        "${xcb_flags[@]}" \
+        build \
+        test
+    ;;
+
+  GoogleDataTransportCCTSupport-xcodebuild-iOS)
+    RunXcodebuild \
+        -workspace 'GoogleDataTransportCCTSupport/gen/GoogleDataTransportCCTSupport/GoogleDataTransportCCTSupport.xcworkspace' \
+        -scheme "GoogleDataTransportCCTSupport-Unit-Tests-Unit" \
+        "${xcb_flags[@]}" \
+        build \
+        test
+
+        RunXcodebuild \
+        -workspace 'GoogleDataTransportCCTSupport/gen/GoogleDataTransportCCTSupport/GoogleDataTransportCCTSupport.xcworkspace' \
+        -scheme "GoogleDataTransportCCTSupport-Unit-Tests-Integration" \
+        "${xcb_flags[@]}" \
+        build \
+        test
     ;;
 
   *)
