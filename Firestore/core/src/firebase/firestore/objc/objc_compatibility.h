@@ -17,9 +17,7 @@
 #ifndef FIRESTORE_CORE_SRC_FIREBASE_FIRESTORE_OBJC_OBJC_COMPATIBILITY_H_
 #define FIRESTORE_CORE_SRC_FIREBASE_FIRESTORE_OBJC_OBJC_COMPATIBILITY_H_
 
-#if !defined(__OBJC__)
-#error "This header only supports Objective-C++"
-#endif  // !defined(__OBJC__)
+#if __OBJC__
 
 #import <Foundation/Foundation.h>
 
@@ -116,11 +114,13 @@ using unordered_map = std::unordered_map<K, V, Hash<K>, EqualTo<K>>;
  */
 template <typename T>
 NSString* Description(const T& value) {
-  return util::WrapNSString(util::ToString(value));
+  return util::MakeNSString(util::ToString(value));
 }
 
 }  // namespace objc
 }  // namespace firestore
 }  // namespace firebase
+
+#endif  // __OBJC__
 
 #endif  // FIRESTORE_CORE_SRC_FIREBASE_FIRESTORE_OBJC_OBJC_COMPATIBILITY_H_

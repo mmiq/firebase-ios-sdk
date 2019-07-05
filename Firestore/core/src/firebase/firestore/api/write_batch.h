@@ -17,28 +17,30 @@
 #ifndef FIRESTORE_CORE_SRC_FIREBASE_FIRESTORE_API_WRITE_BATCH_H_
 #define FIRESTORE_CORE_SRC_FIREBASE_FIRESTORE_API_WRITE_BATCH_H_
 
-#if !defined(__OBJC__)
-#error "This header only supports Objective-C++"
-#endif  // !defined(__OBJC__)
-
-#import <Foundation/Foundation.h>
-
 #include <memory>
 #include <utility>
 #include <vector>
 
-#import "Firestore/Source/Model/FSTMutation.h"
-
 #include "Firestore/core/src/firebase/firestore/api/document_reference.h"
-#include "Firestore/core/src/firebase/firestore/api/firestore.h"
-#include "Firestore/core/src/firebase/firestore/core/user_data.h"
+#include "Firestore/core/src/firebase/firestore/objc/objc_class.h"
 #include "Firestore/core/src/firebase/firestore/util/status.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
+OBJC_CLASS(FSTMutation);
+
 namespace firebase {
 namespace firestore {
+namespace core {
+
+class ParsedSetData;
+class ParsedUpdateData;
+
+}  // namespace core
+
 namespace api {
+
+class Firestore;
 
 class WriteBatch {
  public:
@@ -53,6 +55,10 @@ class WriteBatch {
   void DeleteData(const DocumentReference& reference);
 
   void Commit(util::StatusCallback callback);
+
+  const std::shared_ptr<Firestore>& firestore() const {
+    return firestore_;
+  }
 
  private:
   std::shared_ptr<Firestore> firestore_;

@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'FirebaseDatabase'
-  s.version          = '5.1.1'
+  s.version          = '6.0.0'
   s.summary          = 'Firebase Open Source Libraries for iOS (plus community support for macOS and tvOS)'
 
   s.description      = <<-DESC
@@ -39,4 +39,22 @@ Simplify your iOS development, grow your user base, and monetize more effectivel
     'GCC_PREPROCESSOR_DEFINITIONS' =>
       'FIRDatabase_VERSION=' + s.version.to_s
   }
+
+  s.test_spec 'unit' do |unit_tests|
+    unit_tests.source_files = 'Example/Database/Tests/Unit/*.[mh]',
+                              'Example/Database/Tests/Helpers/*.[mh]',
+                              'Example/Database/Tests/third_party/*.[mh]',
+                              'Example/Shared/FIRAuthInteropFake.[mh]',
+                              'Example/Shared/FIRComponentTestUtilities.h'
+    unit_tests.resources = 'Example/Database/Tests/infoPlist.strings',
+                           'Example/Database/Tests/syncPointSpec.json',
+                           'Example/Database/App/GoogleService-Info.plist'
+  end
+
+  s.test_spec 'integration' do |int_tests|
+    int_tests.source_files = 'Example/Database/Tests/Integration/*.[mh]',
+                             'Example/Database/Tests/Helpers/*.[mh]',
+                             'Example/Shared/FIRAuthInteropFake.[mh]'
+    int_tests.resources = 'Example/Database/App/GoogleService-Info.plist'
+  end
 end

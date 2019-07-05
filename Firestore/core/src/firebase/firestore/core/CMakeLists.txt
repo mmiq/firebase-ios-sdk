@@ -17,6 +17,8 @@ cc_library(
   SOURCES
     database_info.cc
     database_info.h
+    direction.cc
+    direction.h
     filter.cc
     filter.h
     listen_options.h
@@ -31,4 +33,5 @@ cc_library(
   DEPENDS
     absl_strings
     firebase_firestore_model
+    firebase_firestore_objc
 )

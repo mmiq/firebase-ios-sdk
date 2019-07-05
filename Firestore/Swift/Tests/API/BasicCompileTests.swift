@@ -52,6 +52,8 @@ func main() {
 
   enableDisableNetwork(database: db)
 
+  clearPersistence(database: db)
+
   types()
 }
 
@@ -174,6 +176,15 @@ func enableDisableNetwork(database db: Firestore) {
   }
 }
 
+func clearPersistence(database db: Firestore) {
+  db.clearPersistence { error in
+    if let e = error {
+      print("Uh oh! \(e)")
+      return
+    }
+  }
+}
+
 func writeDocuments(at docRef: DocumentReference, database db: Firestore) {
   var batch: WriteBatch
 
@@ -200,7 +211,7 @@ func writeDocuments(at docRef: DocumentReference, database db: Firestore) {
 }
 
 func addDocument(to collectionRef: CollectionReference) {
-  collectionRef.addDocument(data: ["foo": 42])
+  _ = collectionRef.addDocument(data: ["foo": 42])
   // or
   collectionRef.document().setData(["foo": 42])
 }

@@ -22,7 +22,7 @@ function usage() {
 USAGE: scripts/check.sh [--allow-dirty] [--commit] [<revision>]
 
 Runs auto-formatting scripts, source-tree checks, and linters on any files that
-have changed since master.
+have changed since origin/master.
 
 By default, any changes are left as uncommited changes in the working tree. You
 can review them with git diff. Pass --commit to automatically commit any changes.
@@ -50,18 +50,18 @@ OPTIONS:
     Run all checks without making any changes to local files.
 
   <revision>
-    Specifies a starting revision other than the default of master.
+    Specifies a starting revision other than the default of origin/master.
 
 
 EXAMPLES:
 
   check.sh
-    Runs automated checks and formatters on all changed files since master.
-    Check for changes with git diff.
+    Runs automated checks and formatters on all changed files since
+    origin/master. Check for changes with git diff.
 
   check.sh --commit
-    Runs automated checks and formatters on all changed files since master and
-    commits the results.
+    Runs automated checks and formatters on all changed files since
+    origin/master and commits the results.
 
   check.sh --amend HEAD
     Runs automated checks and formatters on all changed files since the last
@@ -84,8 +84,28 @@ cd "${top_dir}"
 
 ALLOW_DIRTY=false
 COMMIT_METHOD="none"
-START_REVISION="master"
+START_REVISION="origin/master"
 TEST_ONLY=false
+VERBOSE=false
+
+# Default to verbose operation if this isn't an interactive build.
+if [[ ! -t 1 ]]; then
+  VERBOSE=true
+fi
+
+# When travis clones a repo for building, it uses a shallow clone. After the
+# first commit on a non-master branch, TRAVIS_COMMIT_RANGE is not set, master
+# is not available and we need to compute the START_REVISION from the common
+# ancestor of $TRAVIS_COMMIT and origin/master.
+if [[ -n "${TRAVIS_COMMIT_RANGE:-}" ]] ; then
+  START_REVISION="$TRAVIS_COMMIT_RANGE"
+elif [[ -n "${TRAVIS_COMMIT:-}" ]] ; then
+  if ! git rev-parse origin/master >& /dev/null; then
+    git remote set-branches --add origin master
+    git fetch origin
+  fi
+  START_REVISION=$(git merge-base origin/master "${TRAVIS_COMMIT}")
+fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -114,6 +134,10 @@ while [[ $# -gt 0 ]]; do
       COMMIT_METHOD=message
       ;;
 
+    --verbose)
+      VERBOSE=true
+      ;;
+
     --test-only)
       # In test-only mode, no changes are made, so there's no reason to
       # require a clean source tree.
@@ -122,10 +146,9 @@ while [[ $# -gt 0 ]]; do
       ;;
 
     *)
-      if git rev-parse "$1" >& /dev/null; then
-        START_REVISION="$1"
-        break
-      fi
+      START_REVISION="$1"
+      shift
+      break
       ;;
   esac
   shift
@@ -149,12 +172,32 @@ if ! git diff-index --quiet HEAD --; then
   fi
 fi
 
-# Record actual start, but only if the revision is specified as a single
-# commit. Ranges specified with .. or ... are left alone.
+# Show Travis-related environment variables, to help with debuging failures.
+if [[ "${VERBOSE}" == true ]]; then
+  env | egrep '^TRAVIS_(BRANCH|COMMIT|PULL|REPO)' | sort || true
+fi
+
 if [[ "${START_REVISION}" == *..* ]]; then
+  RANGE_START="${START_REVISION/..*/}"
+  RANGE_END="${START_REVISION/*../}"
+
+  # Figure out if we have access to master. If not add it to the repo.
+  if ! git rev-parse origin/master >& /dev/null; then
+    git remote set-branches --add origin master
+    git fetch origin
+  fi
+
+  NEW_RANGE_START=$(git merge-base origin/master "${RANGE_END}")
+  START_REVISION="${START_REVISION/$RANGE_START/$NEW_RANGE_START}"
   START_SHA="${START_REVISION}"
+
 else
   START_SHA=$(git rev-parse "${START_REVISION}")
+fi
+
+if [[ "${VERBOSE}" == true ]]; then
+  echo "START_REVISION=$START_REVISION"
+  echo "START_SHA=$START_SHA"
 fi
 
 # If committing --fixup, avoid messages with fixup! fixup! that might come from
@@ -218,4 +261,4 @@ fi
 "${top_dir}/scripts/check_test_inclusion.py"
 
 # Google C++ style
-"${top_dir}/scripts/lint.sh" "${START_SHA}"
+"${top_dir}/scripts/check_lint.py" "${START_SHA}"

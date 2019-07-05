@@ -39,6 +39,10 @@ cc_select(
 cc_library(
   firebase_firestore_api
   SOURCES
+    collection_reference.h
+    collection_reference.mm
+    query_core.h
+    query_core.mm
     settings.cc
     settings.h
     snapshot_metadata.cc
@@ -46,5 +50,7 @@ cc_library(
   DEPENDS
     absl_meta
     firebase_firestore_api_input_validation
+    firebase_firestore_core
+    firebase_firestore_model
     firebase_firestore_util
 )

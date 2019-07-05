@@ -16,6 +16,7 @@
 
 #import "Firestore/Example/Tests/Util/FSTIntegrationTestCase.h"
 
+#import <FirebaseCore/FIRAppInternal.h>
 #import <FirebaseCore/FIRLogger.h>
 #import <FirebaseCore/FIROptions.h>
 #import <FirebaseFirestore/FIRCollectionReference.h>
@@ -40,7 +41,7 @@
 #include "Firestore/core/src/firebase/firestore/util/path.h"
 #include "Firestore/core/src/firebase/firestore/util/string_apple.h"
 #include "Firestore/core/test/firebase/firestore/testutil/app_testing.h"
-#include "Firestore/core/test/firebase/firestore/util/status_test_util.h"
+#include "Firestore/core/test/firebase/firestore/util/status_testing.h"
 
 #include "absl/memory/memory.h"
 
@@ -76,6 +77,8 @@ static const double kPrimingTimeout = 45.0;
 
 static NSString *defaultProjectId;
 static FIRFirestoreSettings *defaultSettings;
+
+static bool runningAgainstEmulator = false;
 
 @implementation FSTIntegrationTestCase {
   NSMutableArray<FIRFirestore *> *_firestores;
@@ -113,6 +116,19 @@ static FIRFirestoreSettings *defaultSettings;
   return [self firestoreWithProjectID:[FSTIntegrationTestCase projectID]];
 }
 
+/**
+ * Figures out what kind of testing environment we're using, and sets up testing defaults to make
+ * that work.
+ *
+ * Several configurations are supported:
+ *   * Mobile Harness, running periocally against prod and nightly, using live SSL certs
+ *   * Hexa built from google3, running on a companion gLinux machine, using self-signed test SSL
+ *     certs
+ *   * Firestore emulator, running on localhost, with SSL disabled
+ *
+ * See Firestore/README.md for detailed setup instructions or comments below for which specific
+ * values trigger which configurations.
+ */
 + (void)setUpDefaults {
   defaultSettings = [[FIRFirestoreSettings alloc] init];
   defaultSettings.persistenceEnabled = YES;
@@ -138,9 +154,8 @@ static FIRFirestoreSettings *defaultSettings;
     return;
   }
 
-  // Otherwise fall back on assuming Hexa on localhost.
+  // Otherwise fall back on assuming the emulator or Hexa on localhost.
   defaultProjectId = @"test-db";
-  defaultSettings.host = @"localhost:8081";
 
   // Hexa uses a self-signed cert: the first bundle location is used by bazel builds. The second is
   // used for github clones.
@@ -153,14 +168,23 @@ static FIRFirestoreSettings *defaultSettings;
   unsigned long long fileSize =
       [[[NSFileManager defaultManager] attributesOfItemAtPath:certsPath error:nil] fileSize];
 
-  if (fileSize == 0) {
+  if (fileSize != 0) {
+    defaultSettings.host = @"localhost:8081";
+
+    GrpcConnection::UseTestCertificate(util::MakeString(defaultSettings.host),
+                                       Path::FromNSString(certsPath), "test_cert_2");
+  } else {
+    // If no cert is set up, configure for the Firestore emulator.
+    defaultSettings.host = @"localhost:8080";
+    defaultSettings.sslEnabled = false;
+    runningAgainstEmulator = true;
+
+    // Also issue a warning because the Firestore emulator doesn't completely work yet.
     NSLog(@"Please set up a GoogleServices-Info.plist for Firestore in Firestore/Example/App using "
            "instructions at <https://github.com/firebase/firebase-ios-sdk#running-sample-apps>. "
            "Alternatively, if you're a Googler with a Hexa preproduction environment, run "
            "setup_integration_tests.py to properly configure testing SSL certificates.");
   }
-  GrpcConnection::UseTestCertificate(util::MakeString(defaultSettings.host),
-                                     Path::FromNSString(certsPath), "test_cert_2");
 }
 
 + (NSString *)projectID {
@@ -168,6 +192,16 @@ static FIRFirestoreSettings *defaultSettings;
     [self setUpDefaults];
   }
   return defaultProjectId;
+}
+
++ (bool)isRunningAgainstEmulator {
+  // The only way to determine whether or not we're running against the emulator is to figure out
+  // which testing environment we're using.  Essentially `setUpDefaults` determines
+  // `runningAgainstEmulator` as a side effect.
+  if (!defaultProjectId) {
+    [self setUpDefaults];
+  }
+  return runningAgainstEmulator;
 }
 
 + (FIRFirestoreSettings *)settings {
@@ -179,6 +213,11 @@ static FIRFirestoreSettings *defaultSettings;
 }
 
 - (FIRFirestore *)firestoreWithProjectID:(NSString *)projectID {
+  FIRApp *app = AppForUnitTesting(util::MakeString(projectID));
+  return [self firestoreWithApp:app];
+}
+
+- (FIRFirestore *)firestoreWithApp:(FIRApp *)app {
   NSString *persistenceKey = [NSString stringWithFormat:@"db%lu", (unsigned long)_firestores.count];
 
   dispatch_queue_t queue =
@@ -188,21 +227,18 @@ static FIRFirestoreSettings *defaultSettings;
 
   FIRSetLoggerLevel(FIRLoggerLevelDebug);
 
-  FIRApp *app = AppForUnitTesting();
   std::unique_ptr<CredentialsProvider> credentials_provider =
       absl::make_unique<firebase::firestore::auth::EmptyCredentialsProvider>();
-
-  FIRFirestore *firestore = [[FIRFirestore alloc] initWithProjectID:util::MakeString(projectID)
-                                                           database:DatabaseId::kDefault
-                                                     persistenceKey:util::MakeString(persistenceKey)
-                                                credentialsProvider:std::move(credentials_provider)
-                                                        workerQueue:std::move(workerQueue)
-                                                        firebaseApp:app];
+  std::string projectID = util::MakeString(app.options.projectID);
+  FIRFirestore *firestore =
+      [[FIRFirestore alloc] initWithDatabaseID:DatabaseId(projectID)
+                                persistenceKey:util::MakeString(persistenceKey)
+                           credentialsProvider:std::move(credentials_provider)
+                                   workerQueue:std::move(workerQueue)
+                                   firebaseApp:app];
 
   firestore.settings = [FSTIntegrationTestCase settings];
-
   [_firestores addObject:firestore];
-
   return firestore;
 }
 
@@ -254,6 +290,15 @@ static FIRFirestoreSettings *defaultSettings;
 
 - (void)shutdownFirestore:(FIRFirestore *)firestore {
   [firestore shutdownWithCompletion:[self completionForExpectationWithName:@"shutdown"]];
+  [self awaitExpectations];
+}
+
+- (void)deleteApp:(FIRApp *)app {
+  XCTestExpectation *expectation = [self expectationWithDescription:@"Delete app"];
+  [app deleteApp:^(BOOL completion) {
+    XCTAssertTrue(completion);
+    [expectation fulfill];
+  }];
   [self awaitExpectations];
 }
 
@@ -405,7 +450,7 @@ static FIRFirestoreSettings *defaultSettings;
   [self awaitExpectations];
 }
 
-- (AsyncQueue *)queueForFirestore:(FIRFirestore *)firestore {
+- (const std::shared_ptr<util::AsyncQueue> &)queueForFirestore:(FIRFirestore *)firestore {
   return [firestore workerQueue];
 }
 

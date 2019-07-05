@@ -56,16 +56,8 @@ const static NSUInteger kMillisPerDay = 8.64e+7;
   });
 }
 
-- (void)unprioritizeEvents:(NSSet<GDTStoredEvent *> *)events {
-  dispatch_async(_queue, ^{
-    for (GDTStoredEvent *event in events) {
-      [self.events removeObject:event];
-    }
-  });
-}
-
 - (GDTUploadPackage *)uploadPackageWithConditions:(GDTUploadConditions)conditions {
-  GDTUploadPackage *package = [[GDTUploadPackage alloc] init];
+  GDTUploadPackage *package = [[GDTUploadPackage alloc] initWithTarget:kGDTTargetCCT];
   dispatch_sync(_queue, ^{
     NSSet<GDTStoredEvent *> *logEventsThatWillBeSent;
     // A high priority event effectively flushes all events to be sent.
@@ -74,11 +66,14 @@ const static NSUInteger kMillisPerDay = 8.64e+7;
       return;
     }
 
+    // If on wifi, upload logs that are ok to send on wifi.
     if ((conditions & GDTUploadConditionWifiData) == GDTUploadConditionWifiData) {
       logEventsThatWillBeSent = [self logEventsOkToSendOnWifi];
     } else {
       logEventsThatWillBeSent = [self logEventsOkToSendOnMobileData];
     }
+
+    // If it's been > 24h since the last daily upload, upload logs with the daily QoS.
     if (self.timeOfLastDailyUpload) {
       int64_t millisSinceLastUpload =
           [GDTClock snapshot].timeMillis - self.timeOfLastDailyUpload.timeMillis;
@@ -121,11 +116,12 @@ typedef NS_ENUM(NSInteger, GDTCCTQoSTier) {
 FOUNDATION_STATIC_INLINE
 NSNumber *GDTCCTQosTierFromGDTEventQosTier(GDTEventQoS qosTier) {
   switch (qosTier) {
-    case GDTEventQoSTelemetry:
     case GDTEventQoSWifiOnly:
       return @(GDTCCTQoSWifiOnly);
       break;
 
+    case GDTEventQoSTelemetry:
+      // falls through.
     case GDTEventQoSDaily:
       return @(GDTCCTQoSDaily);
       break;
@@ -157,7 +153,8 @@ NSNumber *GDTCCTQosTierFromGDTEventQosTier(GDTEventQoS qosTier) {
   return
       [self.events objectsPassingTest:^BOOL(GDTStoredEvent *_Nonnull event, BOOL *_Nonnull stop) {
         NSNumber *qosTier = GDTCCTQosTierFromGDTEventQosTier(event.qosTier);
-        return [qosTier isEqual:@(GDTCCTQoSDefault)] || [qosTier isEqual:@(GDTCCTQoSWifiOnly)];
+        return [qosTier isEqual:@(GDTCCTQoSDefault)] || [qosTier isEqual:@(GDTCCTQoSWifiOnly)] ||
+               [qosTier isEqual:@(GDTCCTQoSDaily)];
       }];
 }
 
@@ -173,15 +170,19 @@ NSNumber *GDTCCTQosTierFromGDTEventQosTier(GDTEventQoS qosTier) {
       }];
 }
 
-#pragma mark - GDTLifecycleProtocol
+#pragma mark - GDTUploadPackageProtocol
 
-- (void)appWillBackground:(UIApplication *)app {
+- (void)packageDelivered:(GDTUploadPackage *)package successful:(BOOL)successful {
+  dispatch_async(_queue, ^{
+    NSSet<GDTStoredEvent *> *events = [package.events copy];
+    for (GDTStoredEvent *event in events) {
+      [self.events removeObject:event];
+    }
+  });
 }
 
-- (void)appWillForeground:(UIApplication *)app {
-}
-
-- (void)appWillTerminate:(UIApplication *)application {
+- (void)packageExpired:(GDTUploadPackage *)package {
+  [self packageDelivered:package successful:YES];
 }
 
 @end

@@ -36,20 +36,24 @@
 #import "Firestore/Source/Core/FSTQuery.h"
 #import "Firestore/Source/Local/FSTQueryData.h"
 #import "Firestore/Source/Model/FSTDocument.h"
-#import "Firestore/Source/Model/FSTFieldValue.h"
 #import "Firestore/Source/Model/FSTMutation.h"
 #import "Firestore/Source/Model/FSTMutationBatch.h"
 
 #include "Firestore/core/include/firebase/firestore/firestore_errors.h"
+#include "Firestore/core/include/firebase/firestore/geo_point.h"
 #include "Firestore/core/src/firebase/firestore/core/filter.h"
+#include "Firestore/core/src/firebase/firestore/core/query.h"
 #include "Firestore/core/src/firebase/firestore/model/database_id.h"
 #include "Firestore/core/src/firebase/firestore/model/document_key.h"
 #include "Firestore/core/src/firebase/firestore/model/field_mask.h"
 #include "Firestore/core/src/firebase/firestore/model/field_path.h"
 #include "Firestore/core/src/firebase/firestore/model/field_transform.h"
+#include "Firestore/core/src/firebase/firestore/model/field_value.h"
 #include "Firestore/core/src/firebase/firestore/model/precondition.h"
 #include "Firestore/core/src/firebase/firestore/model/resource_path.h"
 #include "Firestore/core/src/firebase/firestore/model/transform_operations.h"
+#include "Firestore/core/src/firebase/firestore/nanopb/byte_string.h"
+#include "Firestore/core/src/firebase/firestore/nanopb/nanopb_util.h"
 #include "Firestore/core/src/firebase/firestore/remote/existence_filter.h"
 #include "Firestore/core/src/firebase/firestore/remote/watch_change.h"
 #include "Firestore/core/src/firebase/firestore/util/hard_assert.h"
@@ -61,21 +65,28 @@
 namespace util = firebase::firestore::util;
 using firebase::Timestamp;
 using firebase::firestore::FirestoreErrorCode;
+using firebase::firestore::GeoPoint;
 using firebase::firestore::core::Filter;
+using firebase::firestore::core::Query;
 using firebase::firestore::model::ArrayTransform;
 using firebase::firestore::model::DatabaseId;
 using firebase::firestore::model::DocumentKey;
+using firebase::firestore::model::DocumentState;
 using firebase::firestore::model::FieldMask;
 using firebase::firestore::model::FieldPath;
 using firebase::firestore::model::FieldTransform;
 using firebase::firestore::model::FieldValue;
 using firebase::firestore::model::NumericIncrementTransform;
+using firebase::firestore::model::ObjectValue;
 using firebase::firestore::model::Precondition;
 using firebase::firestore::model::ResourcePath;
 using firebase::firestore::model::ServerTimestampTransform;
 using firebase::firestore::model::SnapshotVersion;
 using firebase::firestore::model::TargetId;
 using firebase::firestore::model::TransformOperation;
+using firebase::firestore::nanopb::ByteString;
+using firebase::firestore::nanopb::MakeByteString;
+using firebase::firestore::nanopb::MakeNSData;
 using firebase::firestore::remote::DocumentWatchChange;
 using firebase::firestore::remote::ExistenceFilter;
 using firebase::firestore::remote::ExistenceFilterWatchChange;
@@ -85,17 +96,14 @@ using firebase::firestore::remote::WatchTargetChangeState;
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface FSTSerializerBeta ()
-// Does not own this DatabaseId.
-@property(nonatomic, assign, readonly) const DatabaseId *databaseID;
-@end
+@implementation FSTSerializerBeta {
+  DatabaseId _databaseID;
+}
 
-@implementation FSTSerializerBeta
-
-- (instancetype)initWithDatabaseID:(const DatabaseId *)databaseID {
+- (instancetype)initWithDatabaseID:(DatabaseId)databaseID {
   self = [super init];
   if (self) {
-    _databaseID = databaseID;
+    _databaseID = std::move(databaseID);
   }
   return self;
 }
@@ -123,35 +131,35 @@ NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark - FIRGeoPoint <=> GTPLatLng
 
-- (GTPLatLng *)encodedGeoPoint:(FIRGeoPoint *)geoPoint {
+- (GTPLatLng *)encodedGeoPoint:(const GeoPoint &)geoPoint {
   GTPLatLng *latLng = [GTPLatLng message];
-  latLng.latitude = geoPoint.latitude;
-  latLng.longitude = geoPoint.longitude;
+  latLng.latitude = geoPoint.latitude();
+  latLng.longitude = geoPoint.longitude();
   return latLng;
 }
 
-- (FIRGeoPoint *)decodedGeoPoint:(GTPLatLng *)latLng {
-  return [[FIRGeoPoint alloc] initWithLatitude:latLng.latitude longitude:latLng.longitude];
+- (GeoPoint)decodedGeoPoint:(GTPLatLng *)latLng {
+  return GeoPoint(latLng.latitude, latLng.longitude);
 }
 
 #pragma mark - DocumentKey <=> Key proto
 
 - (NSString *)encodedDocumentKey:(const DocumentKey &)key {
-  return [self encodedResourcePathForDatabaseID:self.databaseID path:key.path()];
+  return [self encodedResourcePathForDatabaseID:_databaseID path:key.path()];
 }
 
 - (DocumentKey)decodedDocumentKey:(NSString *)name {
   const ResourcePath path = [self decodedResourcePathWithDatabaseID:name];
-  HARD_ASSERT(path[1] == self.databaseID->project_id(),
+  HARD_ASSERT(path[1] == _databaseID.project_id(),
               "Tried to deserialize key from different project.");
-  HARD_ASSERT(path[3] == self.databaseID->database_id(),
+  HARD_ASSERT(path[3] == _databaseID.database_id(),
               "Tried to deserialize key from different datbase.");
   return DocumentKey{[self localResourcePathForQualifiedResourcePath:path]};
 }
 
-- (NSString *)encodedResourcePathForDatabaseID:(const DatabaseId *)databaseID
+- (NSString *)encodedResourcePathForDatabaseID:(const DatabaseId &)databaseID
                                           path:(const ResourcePath &)path {
-  return util::WrapNSString([self encodedResourcePathForDatabaseID:databaseID]
+  return util::MakeNSString([self encodedResourcePathForDatabaseID:databaseID]
                                 .Append("documents")
                                 .Append(path)
                                 .CanonicalString());
@@ -165,7 +173,7 @@ NS_ASSUME_NONNULL_BEGIN
 }
 
 - (NSString *)encodedQueryPath:(const ResourcePath &)path {
-  return [self encodedResourcePathForDatabaseID:self.databaseID path:path];
+  return [self encodedResourcePathForDatabaseID:_databaseID path:path];
 }
 
 - (ResourcePath)decodedQueryPath:(NSString *)name {
@@ -180,8 +188,8 @@ NS_ASSUME_NONNULL_BEGIN
   }
 }
 
-- (ResourcePath)encodedResourcePathForDatabaseID:(const DatabaseId *)databaseID {
-  return ResourcePath{"projects", databaseID->project_id(), "databases", databaseID->database_id()};
+- (ResourcePath)encodedResourcePathForDatabaseID:(const DatabaseId &)databaseID {
+  return ResourcePath{"projects", databaseID.project_id(), "databases", databaseID.database_id()};
 }
 
 - (ResourcePath)localResourcePathForQualifiedResourcePath:(const ResourcePath &)resourceName {
@@ -195,83 +203,77 @@ NS_ASSUME_NONNULL_BEGIN
 }
 
 - (NSString *)encodedDatabaseID {
-  return util::WrapNSString(
-      [self encodedResourcePathForDatabaseID:self.databaseID].CanonicalString());
+  return util::MakeNSString([self encodedResourcePathForDatabaseID:_databaseID].CanonicalString());
 }
 
-#pragma mark - FSTFieldValue <=> Value proto
+#pragma mark - FieldValue <=> Value proto
 
-- (GCFSValue *)encodedFieldValue:(FSTFieldValue *)fieldValue {
-  switch (fieldValue.type) {
+- (GCFSValue *)encodedFieldValue:(const FieldValue &)fieldValue {
+  switch (fieldValue.type()) {
     case FieldValue::Type::Null:
       return [self encodedNull];
     case FieldValue::Type::Boolean:
-      return [self encodedBool:[[fieldValue value] boolValue]];
+      return [self encodedBool:fieldValue.boolean_value()];
     case FieldValue::Type::Integer:
-      return [self encodedInteger:[[fieldValue value] longLongValue]];
+      return [self encodedInteger:fieldValue.integer_value()];
     case FieldValue::Type::Double:
-      return [self encodedDouble:[[fieldValue value] doubleValue]];
-    case FieldValue::Type::Timestamp: {
-      FIRTimestamp *value = static_cast<FIRTimestamp *>([fieldValue value]);
-      return [self encodedTimestampValue:Timestamp{value.seconds, value.nanoseconds}];
-    }
+      return [self encodedDouble:fieldValue.double_value()];
+    case FieldValue::Type::Timestamp:
+      return [self encodedTimestampValue:fieldValue.timestamp_value()];
     case FieldValue::Type::String:
-      return [self encodedString:[fieldValue value]];
+      return [self encodedString:fieldValue.string_value()];
     case FieldValue::Type::Blob:
-      return [self encodedBlobValue:[fieldValue value]];
+      return [self encodedBlobValue:fieldValue.blob_value()];
     case FieldValue::Type::Reference: {
-      FSTReferenceValue *ref = (FSTReferenceValue *)fieldValue;
-      DocumentKey key = [[ref value] key];
-      return [self encodedReferenceValueForDatabaseID:[ref databaseID] key:key];
+      const auto &ref = fieldValue.reference_value();
+      return [self encodedReferenceValueForDatabaseID:ref.database_id() key:ref.key()];
     }
     case FieldValue::Type::GeoPoint:
-      return [self encodedGeoPointValue:[fieldValue value]];
+      return [self encodedGeoPointValue:fieldValue.geo_point_value()];
     case FieldValue::Type::Array: {
       GCFSValue *result = [GCFSValue message];
-      result.arrayValue = [self encodedArrayValue:(FSTArrayValue *)fieldValue];
+      result.arrayValue = [self encodedArrayValue:fieldValue.array_value()];
       return result;
     }
     case FieldValue::Type::Object: {
       GCFSValue *result = [GCFSValue message];
-      result.mapValue = [self encodedMapValue:(FSTObjectValue *)fieldValue];
+      result.mapValue = [self encodedMapValue:fieldValue.object_value()];
       return result;
     }
 
     case FieldValue::Type::ServerTimestamp:
-      HARD_FAIL("Unhandled type %s on %s", NSStringFromClass([fieldValue class]), fieldValue);
+      HARD_FAIL("Unhandled type %s on %s", fieldValue.type(), fieldValue.ToString());
   }
   UNREACHABLE();
 }
 
-- (FSTFieldValue *)decodedFieldValue:(GCFSValue *)valueProto {
+- (FieldValue)decodedFieldValue:(GCFSValue *)valueProto {
   switch (valueProto.valueTypeOneOfCase) {
     case GCFSValue_ValueType_OneOfCase_NullValue:
-      return [FSTNullValue nullValue];
+      return FieldValue::Null();
 
     case GCFSValue_ValueType_OneOfCase_BooleanValue:
-      return FieldValue::FromBoolean(valueProto.booleanValue).Wrap();
+      return FieldValue::FromBoolean(valueProto.booleanValue);
 
     case GCFSValue_ValueType_OneOfCase_IntegerValue:
-      return [FSTIntegerValue integerValue:valueProto.integerValue];
+      return FieldValue::FromInteger(valueProto.integerValue);
 
     case GCFSValue_ValueType_OneOfCase_DoubleValue:
-      return [FSTDoubleValue doubleValue:valueProto.doubleValue];
+      return FieldValue::FromDouble(valueProto.doubleValue);
 
     case GCFSValue_ValueType_OneOfCase_StringValue:
-      return FieldValue::FromString(util::MakeString(valueProto.stringValue)).Wrap();
+      return FieldValue::FromString(util::MakeString(valueProto.stringValue));
 
     case GCFSValue_ValueType_OneOfCase_TimestampValue: {
       Timestamp value = [self decodedTimestamp:valueProto.timestampValue];
-      return [FSTTimestampValue
-          timestampValue:[FIRTimestamp timestampWithSeconds:value.seconds()
-                                                nanoseconds:value.nanoseconds()]];
+      return FieldValue::FromTimestamp(value);
     }
 
     case GCFSValue_ValueType_OneOfCase_GeoPointValue:
-      return [FSTGeoPointValue geoPointValue:[self decodedGeoPoint:valueProto.geoPointValue]];
+      return FieldValue::FromGeoPoint([self decodedGeoPoint:valueProto.geoPointValue]);
 
     case GCFSValue_ValueType_OneOfCase_BytesValue:
-      return [FSTBlobValue blobValue:valueProto.bytesValue];
+      return FieldValue::FromBlob(MakeByteString(valueProto.bytesValue));
 
     case GCFSValue_ValueType_OneOfCase_ReferenceValue:
       return [self decodedReferenceValue:valueProto.referenceValue];
@@ -293,7 +295,7 @@ NS_ASSUME_NONNULL_BEGIN
   return result;
 }
 
-- (GCFSValue *)encodedBool:(BOOL)value {
+- (GCFSValue *)encodedBool:(bool)value {
   GCFSValue *result = [GCFSValue message];
   result.booleanValue = value;
   return result;
@@ -311,9 +313,9 @@ NS_ASSUME_NONNULL_BEGIN
   return result;
 }
 
-- (GCFSValue *)encodedString:(NSString *)value {
+- (GCFSValue *)encodedString:(absl::string_view)value {
   GCFSValue *result = [GCFSValue message];
-  result.stringValue = value;
+  result.stringValue = util::MakeNSString(value);
   return result;
 }
 
@@ -323,72 +325,70 @@ NS_ASSUME_NONNULL_BEGIN
   return result;
 }
 
-- (GCFSValue *)encodedGeoPointValue:(FIRGeoPoint *)value {
+- (GCFSValue *)encodedGeoPointValue:(const GeoPoint &)value {
   GCFSValue *result = [GCFSValue message];
   result.geoPointValue = [self encodedGeoPoint:value];
   return result;
 }
 
-- (GCFSValue *)encodedBlobValue:(NSData *)value {
+- (GCFSValue *)encodedBlobValue:(const ByteString &)value {
   GCFSValue *result = [GCFSValue message];
-  result.bytesValue = value;
+  result.bytesValue = MakeNSData(value);
   return result;
 }
 
-- (GCFSValue *)encodedReferenceValueForDatabaseID:(const DatabaseId *)databaseID
+- (GCFSValue *)encodedReferenceValueForDatabaseID:(const DatabaseId &)databaseID
                                               key:(const DocumentKey &)key {
-  HARD_ASSERT(*databaseID == *self.databaseID, "Database %s:%s cannot encode reference from %s:%s",
-              self.databaseID->project_id(), self.databaseID->database_id(),
-              databaseID->project_id(), databaseID->database_id());
+  HARD_ASSERT(databaseID == _databaseID, "Database %s:%s cannot encode reference from %s:%s",
+              _databaseID.project_id(), _databaseID.database_id(), databaseID.project_id(),
+              databaseID.database_id());
   GCFSValue *result = [GCFSValue message];
   result.referenceValue = [self encodedResourcePathForDatabaseID:databaseID path:key.path()];
   return result;
 }
 
-- (FSTReferenceValue *)decodedReferenceValue:(NSString *)resourceName {
+- (FieldValue)decodedReferenceValue:(NSString *)resourceName {
   const ResourcePath path = [self decodedResourcePathWithDatabaseID:resourceName];
   const std::string &project = path[1];
   const std::string &database = path[3];
   const DocumentKey key{[self localResourcePathForQualifiedResourcePath:path]};
 
   const DatabaseId database_id(project, database);
-  HARD_ASSERT(database_id == *self.databaseID, "Database %s:%s cannot encode reference from %s:%s",
-              self.databaseID->project_id(), self.databaseID->database_id(),
-              database_id.project_id(), database_id.database_id());
-  return [FSTReferenceValue referenceValue:[FSTDocumentKey keyWithDocumentKey:key]
-                                databaseID:self.databaseID];
+  HARD_ASSERT(database_id == _databaseID, "Database %s:%s cannot encode reference from %s:%s",
+              _databaseID.project_id(), _databaseID.database_id(), database_id.project_id(),
+              database_id.database_id());
+  return FieldValue::FromReference(_databaseID, key);
 }
 
-- (GCFSArrayValue *)encodedArrayValue:(FSTArrayValue *)arrayValue {
+- (GCFSArrayValue *)encodedArrayValue:(const FieldValue::Array &)arrayValue {
   GCFSArrayValue *proto = [GCFSArrayValue message];
   NSMutableArray<GCFSValue *> *protoContents = [proto valuesArray];
 
-  [[arrayValue internalValue]
-      enumerateObjectsUsingBlock:^(FSTFieldValue *value, NSUInteger idx, BOOL *stop) {
-        GCFSValue *converted = [self encodedFieldValue:value];
-        [protoContents addObject:converted];
-      }];
+  for (const FieldValue &value : arrayValue) {
+    GCFSValue *converted = [self encodedFieldValue:value];
+    [protoContents addObject:converted];
+  }
   return proto;
 }
 
-- (FSTArrayValue *)decodedArrayValue:(GCFSArrayValue *)arrayValue {
-  NSMutableArray<FSTFieldValue *> *contents =
-      [NSMutableArray arrayWithCapacity:arrayValue.valuesArray_Count];
+- (FieldValue)decodedArrayValue:(GCFSArrayValue *)arrayValue {
+  FieldValue::Array contents;
+  contents.reserve(arrayValue.valuesArray_Count);
 
-  [arrayValue.valuesArray
-      enumerateObjectsUsingBlock:^(GCFSValue *value, NSUInteger idx, BOOL *stop) {
-        [contents addObject:[self decodedFieldValue:value]];
-      }];
-  return [[FSTArrayValue alloc] initWithValueNoCopy:contents];
+  for (GCFSValue *value in arrayValue.valuesArray) {
+    contents.push_back([self decodedFieldValue:value]);
+  }
+
+  return FieldValue::FromArray(std::move(contents));
 }
 
-- (GCFSMapValue *)encodedMapValue:(FSTObjectValue *)value {
+- (GCFSMapValue *)encodedMapValue:(const FieldValue::Map &)value {
   GCFSMapValue *result = [GCFSMapValue message];
-  result.fields = [self encodedFields:value];
+  result.fields = [self encodedMapFields:value];
   return result;
 }
 
-- (FSTObjectValue *)decodedMapValue:(GCFSMapValue *)map {
+- (ObjectValue)decodedMapValue:(GCFSMapValue *)map {
   return [self decodedFields:map.fields];
 }
 
@@ -396,30 +396,35 @@ NS_ASSUME_NONNULL_BEGIN
  * Encodes an FSTObjectValue into a dictionary.
  * @return a new dictionary that can be assigned to a field in another proto.
  */
-- (NSMutableDictionary<NSString *, GCFSValue *> *)encodedFields:(FSTObjectValue *)value {
-  FSTImmutableSortedDictionary<NSString *, FSTFieldValue *> *fields = value.internalValue;
+- (NSMutableDictionary<NSString *, GCFSValue *> *)encodedFields:(const ObjectValue &)value {
+  return [self encodedMapFields:value.GetInternalValue()];
+}
+
+- (NSMutableDictionary<NSString *, GCFSValue *> *)encodedMapFields:(const FieldValue::Map &)value {
   NSMutableDictionary<NSString *, GCFSValue *> *result = [NSMutableDictionary dictionary];
-  [fields enumerateKeysAndObjectsUsingBlock:^(NSString *key, FSTFieldValue *obj, BOOL *stop) {
-    GCFSValue *converted = [self encodedFieldValue:obj];
+
+  for (const auto &kv : value) {
+    NSString *key = util::MakeNSString(kv.first);
+    GCFSValue *converted = [self encodedFieldValue:kv.second];
     result[key] = converted;
-  }];
+  }
   return result;
 }
 
-- (FSTObjectValue *)decodedFields:(NSDictionary<NSString *, GCFSValue *> *)fields {
-  __block FSTObjectValue *result = [FSTObjectValue objectValue];
+- (ObjectValue)decodedFields:(NSDictionary<NSString *, GCFSValue *> *)fields {
+  __block ObjectValue result = ObjectValue::Empty();
   [fields enumerateKeysAndObjectsUsingBlock:^(NSString *_Nonnull key, GCFSValue *_Nonnull obj,
                                               BOOL *_Nonnull stop) {
     FieldPath path{util::MakeString(key)};
-    FSTFieldValue *value = [self decodedFieldValue:obj];
-    result = [result objectBySettingValue:value forPath:path];
+    FieldValue value = [self decodedFieldValue:obj];
+    result = result.Set(path, std::move(value));
   }];
   return result;
 }
 
 #pragma mark - FSTObjectValue <=> Document proto
 
-- (GCFSDocument *)encodedDocumentWithFields:(FSTObjectValue *)objectValue
+- (GCFSDocument *)encodedDocumentWithFields:(const ObjectValue &)objectValue
                                         key:(const DocumentKey &)key {
   GCFSDocument *proto = [GCFSDocument message];
   proto.name = [self encodedDocumentKey:key];
@@ -443,7 +448,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (FSTDocument *)decodedFoundDocument:(GCFSBatchGetDocumentsResponse *)response {
   HARD_ASSERT(!!response.found, "Tried to deserialize a found document from a deleted document.");
   const DocumentKey key = [self decodedDocumentKey:response.found.name];
-  FSTObjectValue *value = [self decodedFields:response.found.fields];
+  ObjectValue value = [self decodedFields:response.found.fields];
   SnapshotVersion version = [self decodedVersion:response.found.updateTime];
   HARD_ASSERT(version != SnapshotVersion::None(),
               "Got a document response with no snapshot version");
@@ -451,7 +456,7 @@ NS_ASSUME_NONNULL_BEGIN
   return [FSTDocument documentWithData:value
                                    key:key
                                version:version
-                                 state:FSTDocumentStateSynced
+                                 state:DocumentState::kSynced
                                  proto:response.found];
 }
 
@@ -574,7 +579,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (GCFSDocumentMask *)encodedFieldMask:(const FieldMask &)fieldMask {
   GCFSDocumentMask *mask = [GCFSDocumentMask message];
   for (const FieldPath &field : fieldMask) {
-    [mask.fieldPathsArray addObject:util::WrapNSString(field.CanonicalString())];
+    [mask.fieldPathsArray addObject:util::MakeNSString(field.CanonicalString())];
   }
   return mask;
 }
@@ -600,7 +605,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (GCFSDocumentTransform_FieldTransform *)encodedFieldTransform:
     (const FieldTransform &)fieldTransform {
   GCFSDocumentTransform_FieldTransform *proto = [GCFSDocumentTransform_FieldTransform message];
-  proto.fieldPath = util::WrapNSString(fieldTransform.path().CanonicalString());
+  proto.fieldPath = util::MakeNSString(fieldTransform.path().CanonicalString());
   if (fieldTransform.transformation().type() == TransformOperation::Type::ServerTimestamp) {
     proto.setToServerValue = GCFSDocumentTransform_FieldTransform_ServerValue_RequestTime;
 
@@ -621,11 +626,11 @@ NS_ASSUME_NONNULL_BEGIN
   return proto;
 }
 
-- (GCFSArrayValue *)encodedArrayTransformElements:(const std::vector<FSTFieldValue *> &)elements {
+- (GCFSArrayValue *)encodedArrayTransformElements:(const std::vector<FieldValue> &)elements {
   GCFSArrayValue *proto = [GCFSArrayValue message];
   NSMutableArray<GCFSValue *> *protoContents = [proto valuesArray];
 
-  for (FSTFieldValue *element : elements) {
+  for (const FieldValue &element : elements) {
     GCFSValue *converted = [self encodedFieldValue:element];
     [protoContents addObject:converted];
   }
@@ -650,7 +655,7 @@ NS_ASSUME_NONNULL_BEGIN
       }
 
       case GCFSDocumentTransform_FieldTransform_TransformType_OneOfCase_AppendMissingElements: {
-        std::vector<FSTFieldValue *> elements =
+        std::vector<FieldValue> elements =
             [self decodedArrayTransformElements:proto.appendMissingElements];
         fieldTransforms.emplace_back(
             FieldPath::FromServerFormat(util::MakeString(proto.fieldPath)),
@@ -660,7 +665,7 @@ NS_ASSUME_NONNULL_BEGIN
       }
 
       case GCFSDocumentTransform_FieldTransform_TransformType_OneOfCase_RemoveAllFromArray_p: {
-        std::vector<FSTFieldValue *> elements =
+        std::vector<FieldValue> elements =
             [self decodedArrayTransformElements:proto.removeAllFromArray_p];
         fieldTransforms.emplace_back(
             FieldPath::FromServerFormat(util::MakeString(proto.fieldPath)),
@@ -670,8 +675,7 @@ NS_ASSUME_NONNULL_BEGIN
       }
 
       case GCFSDocumentTransform_FieldTransform_TransformType_OneOfCase_Increment: {
-        FSTNumberValue *operand =
-            static_cast<FSTNumberValue *>([self decodedFieldValue:proto.increment]);
+        FieldValue operand = [self decodedFieldValue:proto.increment];
         fieldTransforms.emplace_back(FieldPath::FromServerFormat(util::MakeString(proto.fieldPath)),
                                      absl::make_unique<NumericIncrementTransform>(operand));
         break;
@@ -685,8 +689,8 @@ NS_ASSUME_NONNULL_BEGIN
   return fieldTransforms;
 }
 
-- (std::vector<FSTFieldValue *>)decodedArrayTransformElements:(GCFSArrayValue *)proto {
-  __block std::vector<FSTFieldValue *> elements;
+- (std::vector<FieldValue>)decodedArrayTransformElements:(GCFSArrayValue *)proto {
+  __block std::vector<FieldValue> elements;
   [proto.valuesArray enumerateObjectsUsingBlock:^(GCFSValue *value, NSUInteger idx, BOOL *stop) {
     elements.push_back([self decodedFieldValue:value]);
   }];
@@ -700,15 +704,15 @@ NS_ASSUME_NONNULL_BEGIN
   // NOTE: Deletes don't have an updateTime. Use commitVersion instead.
   SnapshotVersion version =
       mutation.hasUpdateTime ? [self decodedVersion:mutation.updateTime] : commitVersion;
-  NSMutableArray *_Nullable transformResults = nil;
+  absl::optional<std::vector<FieldValue>> transformResults;
   if (mutation.transformResultsArray.count > 0) {
-    transformResults = [NSMutableArray array];
+    transformResults = std::vector<FieldValue>{};
     for (GCFSValue *result in mutation.transformResultsArray) {
-      [transformResults addObject:[self decodedFieldValue:result]];
+      transformResults->push_back([self decodedFieldValue:result]);
     }
   }
   return [[FSTMutationResult alloc] initWithVersion:std::move(version)
-                                   transformResults:transformResults];
+                                   transformResults:std::move(transformResults)];
 }
 
 #pragma mark - FSTQueryData => GCFSTarget proto
@@ -789,7 +793,7 @@ NS_ASSUME_NONNULL_BEGIN
     HARD_ASSERT(path.size() % 2 != 0, "Document queries with filters are not supported.");
     queryTarget.parent = [self encodedQueryPath:path.PopLast()];
     GCFSStructuredQuery_CollectionSelector *from = [GCFSStructuredQuery_CollectionSelector message];
-    from.collectionId = util::WrapNSString(path.last_segment());
+    from.collectionId = util::MakeNSString(path.last_segment());
     [queryTarget.structuredQuery.fromArray addObject:from];
   }
 
@@ -804,7 +808,7 @@ NS_ASSUME_NONNULL_BEGIN
     [queryTarget.structuredQuery.orderByArray addObjectsFromArray:orders];
   }
 
-  if (query.limit != NSNotFound) {
+  if (query.limit != Query::kNoLimit) {
     queryTarget.structuredQuery.limit.value = (int32_t)query.limit;
   }
 
@@ -851,7 +855,7 @@ NS_ASSUME_NONNULL_BEGIN
     orderBy = @[];
   }
 
-  NSInteger limit = NSNotFound;
+  int32_t limit = Query::kNoLimit;
   if (query.hasLimit) {
     limit = query.limit.value;
   }
@@ -945,7 +949,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (FSTRelationFilter *)decodedRelationFilter:(GCFSStructuredQuery_FieldFilter *)proto {
   FieldPath fieldPath = FieldPath::FromServerFormat(util::MakeString(proto.field.fieldPath));
   Filter::Operator filterOperator = [self decodedRelationFilterOperator:proto.op];
-  FSTFieldValue *value = [self decodedFieldValue:proto.value];
+  FieldValue value = [self decodedFieldValue:proto.value];
   return [FSTRelationFilter filterWithField:fieldPath filterOperator:filterOperator value:value];
 }
 
@@ -978,7 +982,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GCFSStructuredQuery_FieldReference *)encodedFieldPath:(const FieldPath &)fieldPath {
   GCFSStructuredQuery_FieldReference *ref = [GCFSStructuredQuery_FieldReference message];
-  ref.fieldPath = util::WrapNSString(fieldPath.CanonicalString());
+  ref.fieldPath = util::MakeNSString(fieldPath.CanonicalString());
   return ref;
 }
 
@@ -1072,7 +1076,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (GCFSCursor *)encodedBound:(FSTBound *)bound {
   GCFSCursor *proto = [GCFSCursor message];
   proto.before = bound.isBefore;
-  for (FSTFieldValue *fieldValue in bound.position) {
+  for (const FieldValue &fieldValue : bound.position) {
     GCFSValue *value = [self encodedFieldValue:fieldValue];
     [proto.valuesArray addObject:value];
   }
@@ -1080,14 +1084,14 @@ NS_ASSUME_NONNULL_BEGIN
 }
 
 - (FSTBound *)decodedBound:(GCFSCursor *)proto {
-  NSMutableArray<FSTFieldValue *> *indexComponents = [NSMutableArray array];
+  std::vector<FieldValue> indexComponents;
 
   for (GCFSValue *valueProto in proto.valuesArray) {
-    FSTFieldValue *value = [self decodedFieldValue:valueProto];
-    [indexComponents addObject:value];
+    FieldValue value = [self decodedFieldValue:valueProto];
+    indexComponents.push_back(std::move(value));
   }
 
-  return [FSTBound boundWithPosition:indexComponents isBefore:proto.before];
+  return [FSTBound boundWithPosition:std::move(indexComponents) isBefore:proto.before];
 }
 
 #pragma mark - WatchChange <= GCFSListenResponse proto
@@ -1174,7 +1178,7 @@ NS_ASSUME_NONNULL_BEGIN
 }
 
 - (std::unique_ptr<WatchChange>)decodedDocumentChange:(GCFSDocumentChange *)change {
-  FSTObjectValue *value = [self decodedFields:change.document.fields];
+  ObjectValue value = [self decodedFields:change.document.fields];
   DocumentKey key = [self decodedDocumentKey:change.document.name];
   SnapshotVersion version = [self decodedVersion:change.document.updateTime];
   HARD_ASSERT(version != SnapshotVersion::None(), "Got a document change with no snapshot version");
@@ -1183,7 +1187,7 @@ NS_ASSUME_NONNULL_BEGIN
   FSTMaybeDocument *document = [FSTDocument documentWithData:value
                                                          key:key
                                                      version:version
-                                                       state:FSTDocumentStateSynced
+                                                       state:DocumentState::kSynced
                                                        proto:change.document];
 
   std::vector<TargetId> updatedTargetIDs = [self decodedIntegerArray:change.targetIdsArray];

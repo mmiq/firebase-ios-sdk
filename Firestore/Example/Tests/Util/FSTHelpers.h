@@ -38,7 +38,6 @@
 @class FSTDeletedDocument;
 @class FSTDocument;
 @class FSTDocumentKeyReference;
-@class FSTFieldValue;
 @class FSTFilter;
 @class FSTLocalViewChanges;
 @class FSTPatchMutation;
@@ -59,6 +58,8 @@ class RemoteEvent;
 }  // namespace remote
 }  // namespace firestore
 }  // namespace firebase
+
+namespace model = firebase::firestore::model;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -226,11 +227,11 @@ FIRGeoPoint *FSTTestGeoPoint(double latitude, double longitude);
 NSDateComponents *FSTTestDateComponents(
     int year, int month, int day, int hour, int minute, int second);
 
-/** Wraps a plain value into an FSTFieldValue instance. */
-FSTFieldValue *FSTTestFieldValue(id _Nullable value);
+/** Wraps a plain value into an FieldValue instance. */
+model::FieldValue FSTTestFieldValue(id _Nullable value);
 
 /** Wraps a NSDictionary value into an FSTObjectValue instance. */
-FSTObjectValue *FSTTestObjectValue(NSDictionary<NSString *, id> *data);
+model::ObjectValue FSTTestObjectValue(NSDictionary<NSString *, id> *data);
 
 /** A convenience method for creating document keys for tests. */
 firebase::firestore::model::DocumentKey FSTTestDocKey(NSString *path);
@@ -242,7 +243,7 @@ typedef int64_t FSTTestSnapshotVersion;
 FSTDocument *FSTTestDoc(const absl::string_view path,
                         FSTTestSnapshotVersion version,
                         NSDictionary<NSString *, id> *data,
-                        FSTDocumentState documentState);
+                        model::DocumentState documentState);
 
 /** A convenience method for creating deleted docs for tests. */
 FSTDeletedDocument *FSTTestDeletedDoc(const absl::string_view path,
@@ -272,14 +273,13 @@ FSTSortOrder *FSTTestOrderBy(const absl::string_view field, NSString *direction)
  * Creates an NSComparator that will compare FSTDocuments by the given fieldPath string then by
  * key.
  */
-NSComparator FSTTestDocComparator(const absl::string_view fieldPath);
+model::DocumentComparator FSTTestDocComparator(const absl::string_view fieldPath);
 
 /**
  * Creates a DocumentSet based on the given comparator, initially containing the given
  * documents.
  */
-firebase::firestore::model::DocumentSet FSTTestDocSet(NSComparator comp,
-                                                      NSArray<FSTDocument *> *docs);
+model::DocumentSet FSTTestDocSet(model::DocumentComparator comp, NSArray<FSTDocument *> *docs);
 
 /** Computes changes to the view with the docs and then applies them and returns the snapshot. */
 absl::optional<firebase::firestore::core::ViewSnapshot> FSTTestApplyChanges(

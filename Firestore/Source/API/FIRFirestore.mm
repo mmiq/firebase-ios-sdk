@@ -19,7 +19,6 @@
 #import <FirebaseCore/FIRApp.h>
 #import <FirebaseCore/FIRAppInternal.h>
 #import <FirebaseCore/FIRComponentContainer.h>
-#import <FirebaseCore/FIRLogger.h>
 #import <FirebaseCore/FIROptions.h>
 
 #include <memory>
@@ -28,6 +27,7 @@
 
 #import "FIRFirestoreSettings+Internal.h"
 
+#import "Firestore/Source/API/FIRCollectionReference+Internal.h"
 #import "Firestore/Source/API/FIRDocumentReference+Internal.h"
 #import "Firestore/Source/API/FIRFirestore+Internal.h"
 #import "Firestore/Source/API/FIRTransaction+Internal.h"
@@ -35,6 +35,7 @@
 #import "Firestore/Source/API/FSTFirestoreComponent.h"
 #import "Firestore/Source/API/FSTUserDataConverter.h"
 
+#include "Firestore/core/src/firebase/firestore/api/collection_reference.h"
 #include "Firestore/core/src/firebase/firestore/api/firestore.h"
 #include "Firestore/core/src/firebase/firestore/api/input_validation.h"
 #include "Firestore/core/src/firebase/firestore/api/write_batch.h"
@@ -73,56 +74,17 @@ NS_ASSUME_NONNULL_BEGIN
   FIRFirestoreSettings *_settings;
 }
 
-+ (NSMutableDictionary<NSString *, FIRFirestore *> *)instances {
-  static dispatch_once_t token = 0;
-  static NSMutableDictionary<NSString *, FIRFirestore *> *instances;
-  dispatch_once(&token, ^{
-    instances = [NSMutableDictionary dictionary];
-  });
-  return instances;
-}
-
-+ (void)initialize {
-  NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
-  [center addObserverForName:kFIRAppDeleteNotification
-                      object:nil
-                       queue:nil
-                  usingBlock:^(NSNotification *_Nonnull note) {
-                    NSString *appName = note.userInfo[kFIRAppNameKey];
-                    if (appName == nil) return;
-
-                    NSMutableDictionary *instances = [self instances];
-                    @synchronized(instances) {
-                      // Since the key for instances isn't just the app name, iterate over all the
-                      // keys to get the one(s) we have to delete. There could be multiple in case
-                      // the user calls firestoreForApp:database:.
-                      NSMutableArray *keysToDelete = [[NSMutableArray alloc] init];
-                      NSString *keyPrefix = [NSString stringWithFormat:@"%@|", appName];
-                      for (NSString *key in instances.allKeys) {
-                        if ([key hasPrefix:keyPrefix]) {
-                          [keysToDelete addObject:key];
-                        }
-                      }
-
-                      // Loop through the keys found and delete them from the stored instances.
-                      for (NSString *key in keysToDelete) {
-                        [instances removeObjectForKey:key];
-                      }
-                    }
-                  }];
-}
-
 + (instancetype)firestore {
   FIRApp *app = [FIRApp defaultApp];
   if (!app) {
     ThrowIllegalState("Failed to get FirebaseApp instance. Please call FirebaseApp.configure() "
                       "before using Firestore");
   }
-  return [self firestoreForApp:app database:util::WrapNSString(DatabaseId::kDefault)];
+  return [self firestoreForApp:app database:util::MakeNSString(DatabaseId::kDefault)];
 }
 
 + (instancetype)firestoreForApp:(FIRApp *)app {
-  return [self firestoreForApp:app database:util::WrapNSString(DatabaseId::kDefault)];
+  return [self firestoreForApp:app database:util::MakeNSString(DatabaseId::kDefault)];
 }
 
 // TODO(b/62410906): make this public
@@ -142,16 +104,15 @@ NS_ASSUME_NONNULL_BEGIN
   return [provider firestoreForDatabase:database];
 }
 
-- (instancetype)initWithProjectID:(std::string)projectID
-                         database:(std::string)database
-                   persistenceKey:(std::string)persistenceKey
-              credentialsProvider:(std::unique_ptr<CredentialsProvider>)credentialsProvider
-                      workerQueue:(std::unique_ptr<AsyncQueue>)workerQueue
-                      firebaseApp:(FIRApp *)app {
+- (instancetype)initWithDatabaseID:(model::DatabaseId)databaseID
+                    persistenceKey:(std::string)persistenceKey
+               credentialsProvider:(std::unique_ptr<CredentialsProvider>)credentialsProvider
+                       workerQueue:(std::shared_ptr<AsyncQueue>)workerQueue
+                       firebaseApp:(FIRApp *)app {
   if (self = [super init]) {
-    _firestore = std::make_shared<Firestore>(
-        std::move(projectID), std::move(database), std::move(persistenceKey),
-        std::move(credentialsProvider), std::move(workerQueue), (__bridge void *)self);
+    _firestore = std::make_shared<Firestore>(std::move(databaseID), std::move(persistenceKey),
+                                             std::move(credentialsProvider), std::move(workerQueue),
+                                             (__bridge void *)self);
 
     _app = app;
 
@@ -165,7 +126,7 @@ NS_ASSUME_NONNULL_BEGIN
       }
     };
 
-    _dataConverter = [[FSTUserDataConverter alloc] initWithDatabaseID:&_firestore->database_id()
+    _dataConverter = [[FSTUserDataConverter alloc] initWithDatabaseID:_firestore->database_id()
                                                          preConverter:block];
     // Use the property setter so the default settings get plumbed into _firestoreClient.
     self.settings = [[FIRFirestoreSettings alloc] init];
@@ -197,7 +158,8 @@ NS_ASSUME_NONNULL_BEGIN
     ThrowInvalidArgument("Invalid path (%s). Paths must not contain // in them.", collectionPath);
   }
 
-  return _firestore->GetCollection(util::MakeString(collectionPath));
+  return [[FIRCollectionReference alloc]
+      initWithReference:_firestore->GetCollection(util::MakeString(collectionPath))];
 }
 
 - (FIRDocumentReference *)documentWithPath:(NSString *)documentPath {
@@ -294,7 +256,7 @@ NS_ASSUME_NONNULL_BEGIN
 }
 
 + (void)enableLogging:(BOOL)logging {
-  FIRSetLoggerLevel(logging ? FIRLoggerLevelDebug : FIRLoggerLevelNotice);
+  util::LogSetLevel(logging ? util::kLogLevelDebug : util::kLogLevelNotice);
 }
 
 - (void)enableNetworkWithCompletion:(nullable void (^)(NSError *_Nullable error))completion {
@@ -305,6 +267,10 @@ NS_ASSUME_NONNULL_BEGIN
   _firestore->DisableNetwork(util::MakeCallback(completion));
 }
 
+- (void)clearPersistenceWithCompletion:(nullable void (^)(NSError *_Nullable error))completion {
+  _firestore->ClearPersistence(util::MakeCallback(completion));
+}
+
 @end
 
 @implementation FIRFirestore (Internal)
@@ -313,16 +279,16 @@ NS_ASSUME_NONNULL_BEGIN
   return _firestore;
 }
 
-- (AsyncQueue *)workerQueue {
+- (const std::shared_ptr<util::AsyncQueue> &)workerQueue {
   return _firestore->worker_queue();
 }
 
-- (const DatabaseId *)databaseID {
-  return &_firestore->database_id();
+- (const DatabaseId &)databaseID {
+  return _firestore->database_id();
 }
 
 + (BOOL)isLoggingEnabled {
-  return FIRIsLoggableLevel(FIRLoggerLevelDebug, NO);
+  return util::LogIsLoggable(util::kLogLevelDebug);
 }
 
 + (FIRFirestore *)recoverFromFirestore:(std::shared_ptr<Firestore>)firestore {

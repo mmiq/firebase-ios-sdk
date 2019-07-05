@@ -1,3 +1,17 @@
+# 2019-07 -- v4.1.1
+- Fix Xcode 11 tvOS build issue - (#3216)
+
+# 2019-06-18 -- v4.1.0
+- Adding macOS support for Messaging. You can now send push notification to your mac app with Firebase Messaging.(#2880)
+
+# 2019-06-04 -- v4.0.2
+- Disable data protection when opening the Rmq2PeristentStore. (#2963)
+
+# 2019-05-21 -- v4.0.1
+- Fix race condition checkin is deleted before writing during app start. This cleans up the corrupted checkin and fixes #2438. (#2860)
+- Separete APNS proxy methods in GULAppDelegateSwizzler so developers don't need to swizzle APNS related method unless explicitly requested, this fixes #2807. (#2835)
+- Clean up code. Remove extra layer of class. (#2853)
+
 # 2019-05-07 -- v4.0.0
 - Remove deprecated `useMessagingDelegateForDirectChannel` property.(#2711) All direct channels (non-APNS) messages will be handled by `messaging:didReceiveMessage:`. Previously in iOS 9 and below, the direct channel messages are handled in `application:didReceiveRemoteNotification:fetchCompletionHandler:` and this behavior can be changed by setting `useMessagingDelegateForDirectChannel` to true. Now that all messages by default are handled in `messaging:didReceiveMessage:`. This boolean value is no longer needed. If you already have set useMessagingDelegateForDirectChannel to YES, or handle all your direct channel messages in `messaging:didReceiveMessage:`. This change should not affect you.
 - Remove deprecated API to connect direct channel. (#2717) Should use `shouldEstablishDirectChannel` property instead.

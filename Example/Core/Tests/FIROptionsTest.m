@@ -100,6 +100,11 @@ extern NSString *const kFIRLibraryVersionID;
 - (void)testInitWithContentsOfFile {
   NSString *filePath = [[NSBundle mainBundle] pathForResource:@"GoogleService-Info"
                                                        ofType:@"plist"];
+  if (filePath == nil) {
+    // Use bundleForClass to allow GoogleService-Info.plist to be in the test target's bundle.
+    NSBundle *bundle = [NSBundle bundleForClass:[self class]];
+    filePath = [bundle pathForResource:@"GoogleService-Info" ofType:@"plist"];
+  }
   FIROptions *options = [[FIROptions alloc] initWithContentsOfFile:filePath];
   [self assertOptionsMatchDefaults:options andProjectID:YES];
   XCTAssertNil(options.deepLinkURLScheme);
@@ -192,6 +197,11 @@ extern NSString *const kFIRLibraryVersionID;
   options.storageBucket = mutableString;
   [mutableString appendString:@"2"];
   XCTAssertEqualObjects(options.storageBucket, @"1");
+
+  mutableString = [[NSMutableString alloc] initWithString:@"1"];
+  options.appGroupID = mutableString;
+  [mutableString appendString:@"2"];
+  XCTAssertEqualObjects(options.appGroupID, @"1");
 }
 
 - (void)testCopyWithZone {

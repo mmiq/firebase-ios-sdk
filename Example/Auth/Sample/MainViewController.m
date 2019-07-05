@@ -15,6 +15,19 @@
  */
 
 #import "MainViewController.h"
+#import "MainViewController+App.h"
+#import "MainViewController+Auth.h"
+#import "MainViewController+AutoTests.h"
+#import "MainViewController+Custom.h"
+#import "MainViewController+Email.h"
+#import "MainViewController+Facebook.h"
+#import "MainViewController+GameCenter.h"
+#import "MainViewController+Google.h"
+#import "MainViewController+Internal.h"
+#import "MainViewController+OAuth.h"
+#import "MainViewController+OOB.h"
+#import "MainViewController+Phone.h"
+#import "MainViewController+User.h"
 
 #import <objc/runtime.h>
 
@@ -37,19 +50,6 @@
 #import "UserInfoViewController.h"
 #import "UserTableViewCell.h"
 #import "FIRAuth_Internal.h"
-#import "MainViewController+Internal.h"
-#import "MainViewController+GameCenter.h"
-#import "MainViewController+Phone.h"
-#import "MainViewController+User.h"
-#import "MainViewController+OOB.h"
-#import "MainViewController+App.h"
-#import "MainViewController+Email.h"
-#import "MainViewController+Google.h"
-#import "MainViewController+Facebook.h"
-#import "MainViewController+Auth.h"
-#import "MainViewController+OAuth.h"
-#import "MainViewController+Custom.h"
-#import "MainViewController+AutoTests.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -91,6 +91,10 @@ typedef void (^FIRTokenCallback)(NSString *_Nullable token, NSError *_Nullable e
     _IDTokenDidChangeListeners = [NSMutableArray array];
     _googleOAuthProvider = [FIROAuthProvider providerWithProviderID:FIRGoogleAuthProviderID];
     _microsoftOAuthProvider = [FIROAuthProvider providerWithProviderID:@"microsoft.com"];
+    _twitterOAuthProvider = [FIROAuthProvider providerWithProviderID:@"twitter.com"];
+    _linkedinOAuthProvider = [FIROAuthProvider providerWithProviderID:@"linkedin.com"];
+    _yahooOAuthProvider = [FIROAuthProvider providerWithProviderID:@"yahoo.com"];
+    _gitHubOAuthProvider = [FIROAuthProvider providerWithProviderID:@"github.com"];
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(authStateChangedForAuth:)
                                                  name:FIRAuthStateDidChangeNotification
@@ -468,7 +472,7 @@ static NSDictionary<NSString *, NSString *> *parseURL(NSString *urlString) {
 }
 
 - (void)showTypicalUIForUserUpdateResultsWithTitle:(NSString *)resultsTitle
-                                             error:(NSError *)error {
+                                             error:(NSError * _Nullable)error {
   if (error) {
     NSString *message = [NSString stringWithFormat:@"%@ (%ld)\n%@",
                                                    error.domain,
@@ -488,7 +492,7 @@ static NSDictionary<NSString *, NSString *> *parseURL(NSString *urlString) {
 }
 
 - (void)showUIForAuthDataResultWithResult:(FIRAuthDataResult *)result
-                                    error:(NSError *)error {
+                                    error:(NSError * _Nullable)error {
   NSString *errorMessage = [NSString stringWithFormat:@"%@ (%ld)\n%@",
                                                       error.domain ?: @"",
                                                       (long)error.code,
@@ -540,7 +544,7 @@ static NSDictionary<NSString *, NSString *> *parseURL(NSString *urlString) {
   [self log:[NSString stringWithFormat:@"SUCCESS: %@", string]];
 }
 
-- (void)logFailure:(NSString *)string error:(NSError *) error {
+- (void)logFailure:(NSString *)string error:(NSError * _Nullable) error {
   NSString *message =
   [NSString stringWithFormat:@"FAILURE: %@  Error Description: %@.", string, error.description];
   [self log:message];

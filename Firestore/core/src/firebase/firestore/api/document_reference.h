@@ -17,12 +17,6 @@
 #ifndef FIRESTORE_CORE_SRC_FIREBASE_FIRESTORE_API_DOCUMENT_REFERENCE_H_
 #define FIRESTORE_CORE_SRC_FIREBASE_FIRESTORE_API_DOCUMENT_REFERENCE_H_
 
-#if !defined(__OBJC__)
-#error "This header only supports Objective-C++"
-#endif  // !defined(__OBJC__)
-
-#import <Foundation/Foundation.h>
-
 #include <memory>
 #include <string>
 #include <utility>
@@ -30,7 +24,6 @@
 #include "Firestore/core/src/firebase/firestore/api/document_snapshot.h"
 #include "Firestore/core/src/firebase/firestore/api/listener_registration.h"
 #include "Firestore/core/src/firebase/firestore/core/listen_options.h"
-#include "Firestore/core/src/firebase/firestore/core/user_data.h"
 #include "Firestore/core/src/firebase/firestore/model/document_key.h"
 #include "Firestore/core/src/firebase/firestore/model/resource_path.h"
 #include "Firestore/core/src/firebase/firestore/util/status.h"
@@ -40,8 +33,16 @@ NS_ASSUME_NONNULL_BEGIN
 
 namespace firebase {
 namespace firestore {
+namespace core {
+
+class ParsedSetData;
+class ParsedUpdateData;
+
+}  // namespace core
+
 namespace api {
 
+class CollectionReference;
 class Firestore;
 enum class Source;
 
@@ -66,14 +67,12 @@ class DocumentReference {
 
   const std::string& document_id() const;
 
-  // TODO(varconst) uncomment when core API CollectionReference is implemented.
-  // CollectionReference Parent() const;
+  CollectionReference Parent() const;
 
   std::string Path() const;
 
-  // TODO(varconst) uncomment when core API CollectionReference is implemented.
-  // CollectionReference GetCollectionReference(
-  //     const std::string& collection_path) const;
+  CollectionReference GetCollectionReference(
+      const std::string& collection_path) const;
 
   void SetData(core::ParsedSetData&& setData, util::StatusCallback callback);
 

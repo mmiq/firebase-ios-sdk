@@ -16,10 +16,28 @@
 
 cmake_minimum_required(VERSION 2.8.11)
 
+# Disallow mixing keyword and non-keyword forms of target_link_libraries
+if(POLICY CMP0023)
+  cmake_policy(SET CMP0023 NEW)
+endif()
+
 # Report AppleClang separately from Clang. Their version numbers are different.
 # https://cmake.org/cmake/help/v3.0/policy/CMP0025.html
 if(POLICY CMP0025)
   cmake_policy(SET CMP0025 NEW)
+endif()
+
+# Enable rpath by default
+if(POLICY CMP0042)
+  cmake_policy(SET CMP0042 NEW)
+endif()
+
+# Generate Ninja phony rules for unknown dependencies in the build tree and
+# don't complain about doing so. Our dependencies aren't good about declaring
+# BYPRODUCTS and we mix them all into a single uber build so we can't enable
+# this policy until all dependencies are capable of doing so.
+if(POLICY CMP0058)
+  cmake_policy(SET CMP0058 OLD)
 endif()
 
 # Defer enabling any languages.
@@ -184,13 +202,16 @@ set(nanopb_MSVC_STATIC_RUNTIME OFF CACHE BOOL "Link static runtime libraries")
 add_external_subdirectory(nanopb)
 
 target_compile_definitions(
-  protobuf-nanopb
+  protobuf-nanopb-static
   PUBLIC -DPB_FIELD_32BIT -DPB_ENABLE_MALLOC
 )
 
+# Enable #include <nanopb/pb.h>
 target_include_directories(
-  protobuf-nanopb
-  INTERFACE $<BUILD_INTERFACE:${FIREBASE_EXTERNAL_SOURCE_DIR}/nanopb>
+  protobuf-nanopb-static
+  INTERFACE
+  $<BUILD_INTERFACE:${FIREBASE_EXTERNAL_SOURCE_DIR}>
+  $<BUILD_INTERFACE:${FIREBASE_EXTERNAL_SOURCE_DIR}/nanopb>
 )
 
 
@@ -199,6 +220,11 @@ include(compiler_setup)
 
 
 # Firebase packages
+
+# Set variables that CocoaPods expects to be able to expand in values it
+# includes in the xcconfigs it generates.
+set(PODS_TARGET_SRCROOT ${FIREBASE_SOURCE_DIR})
+
 podspec_framework(
   ${FIREBASE_SOURCE_DIR}/GoogleUtilities.podspec
   SPECS Logger

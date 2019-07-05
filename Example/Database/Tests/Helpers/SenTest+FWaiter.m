@@ -19,19 +19,21 @@
 
 @implementation XCTestCase (FWaiter)
 
-- (NSTimeInterval) waitUntil:(BOOL (^)())predicate {
+- (NSTimeInterval) waitUntil:(BOOL (^)(void))predicate {
     return [self waitUntil:predicate timeout:kFirebaseTestWaitUntilTimeout description:nil];
 }
 
-- (NSTimeInterval) waitUntil:(BOOL (^)())predicate description:(NSString*)desc {
+- (NSTimeInterval) waitUntil:(BOOL (^)(void))predicate description:(NSString*)desc {
     return [self waitUntil:predicate timeout:kFirebaseTestWaitUntilTimeout description:desc];
 }
 
-- (NSTimeInterval) waitUntil:(BOOL (^)())predicate timeout:(NSTimeInterval)seconds {
+- (NSTimeInterval) waitUntil:(BOOL (^)(void))predicate timeout:(NSTimeInterval)seconds {
     return [self waitUntil:predicate timeout:seconds description:nil];
 }
 
-- (NSTimeInterval) waitUntil:(BOOL (^)())predicate timeout:(NSTimeInterval)seconds description:(NSString*)desc {
+- (NSTimeInterval) waitUntil:(BOOL (^)(void))predicate
+                     timeout:(NSTimeInterval)seconds
+                 description:(NSString*)desc {
     NSTimeInterval start = [NSDate timeIntervalSinceReferenceDate];
     NSDate *timeoutDate = [NSDate dateWithTimeIntervalSinceNow:seconds];
     NSTimeInterval timeoutTime = [timeoutDate timeIntervalSinceReferenceDate];
@@ -40,7 +42,8 @@
     for (currentTime = [NSDate timeIntervalSinceReferenceDate];
          !predicate() && currentTime < timeoutTime;
          currentTime = [NSDate timeIntervalSinceReferenceDate]) {
-        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.25]];
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.25]];
     }
 
     NSTimeInterval finish = [NSDate timeIntervalSinceReferenceDate];

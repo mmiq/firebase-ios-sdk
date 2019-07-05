@@ -50,7 +50,7 @@ function(cc_library name)
 
   maybe_remove_objc_sources(sources ${ccl_SOURCES})
   add_library(${name} ${sources})
-  add_objc_flags(${name} ${ccl_SOURCES})
+  add_objc_flags(${name} ${sources})
   target_include_directories(
     ${name}
     PUBLIC
@@ -60,6 +60,7 @@ function(cc_library name)
     ${FIREBASE_SOURCE_DIR}
   )
 
+  target_compile_options(${name} PRIVATE ${FIREBASE_CXX_FLAGS})
   target_link_libraries(${name} PUBLIC ${ccl_DEPENDS})
 
   if(ccl_EXCLUDE_FROM_ALL)
@@ -127,11 +128,11 @@ function(cc_binary name)
 
   maybe_remove_objc_sources(sources ${ccb_SOURCES})
   add_executable(${name} ${sources})
-  add_objc_flags(${name} ${ccb_SOURCES})
-  add_test(${name} ${name})
+  add_objc_flags(${name} ${sources})
 
-  target_include_directories(${name} PUBLIC ${FIREBASE_SOURCE_DIR})
-  target_link_libraries(${name} ${ccb_DEPENDS})
+  target_compile_options(${name} PRIVATE ${FIREBASE_CXX_FLAGS})
+  target_include_directories(${name} PRIVATE ${FIREBASE_SOURCE_DIR})
+  target_link_libraries(${name} PRIVATE ${ccb_DEPENDS})
 
   if(ccb_EXCLUDE_FROM_ALL)
     set_property(
@@ -157,11 +158,12 @@ function(cc_test name)
 
   maybe_remove_objc_sources(sources ${cct_SOURCES})
   add_executable(${name} ${sources})
-  add_objc_flags(${name} ${cct_SOURCES})
+  add_objc_flags(${name} ${sources})
   add_test(${name} ${name})
 
-  target_include_directories(${name} PUBLIC ${FIREBASE_SOURCE_DIR})
-  target_link_libraries(${name} ${cct_DEPENDS})
+  target_compile_options(${name} PRIVATE ${FIREBASE_CXX_FLAGS})
+  target_include_directories(${name} PRIVATE ${FIREBASE_SOURCE_DIR})
+  target_link_libraries(${name} PRIVATE ${cct_DEPENDS})
 endfunction()
 
 # cc_fuzz_test(
@@ -234,7 +236,7 @@ endfunction()
 # add_objc_flags(target sources...)
 #
 # Adds OBJC_FLAGS to the compile options of the given target if any of the
-# sources have filenames that indicate they are are Objective-C.
+# sources have filenames that indicate they are Objective-C.
 function(add_objc_flags target)
   set(_has_objc OFF)
 

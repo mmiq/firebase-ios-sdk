@@ -350,6 +350,9 @@
 		D0FE8A941ED9CAAE003F6722 /* FIRAppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = D0FE8A1A1ED9C6D2003F6722 /* FIRAppDelegate.m */; };
 		D0FE8A951ED9CAAE003F6722 /* FIRViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = D0FE8A1C1ED9C6D2003F6722 /* FIRViewController.m */; };
 		D0FE8A961ED9CAAE003F6722 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = D0FE8A1D1ED9C6D2003F6722 /* main.m */; };
+		D5B2514347161203F929FA47 /* FIRStorageListTests.m in Sources */ = {isa = PBXBuildFile; fileRef = D5B2545FC99E33265C65CAA4 /* FIRStorageListTests.m */; };
+		D5B251C16CD531364AA90C58 /* FIRStorageListTests.m in Sources */ = {isa = PBXBuildFile; fileRef = D5B2545FC99E33265C65CAA4 /* FIRStorageListTests.m */; };
+		D5B253A8C57176FF8C368F4E /* FIRStorageListTests.m in Sources */ = {isa = PBXBuildFile; fileRef = D5B2545FC99E33265C65CAA4 /* FIRStorageListTests.m */; };
 		D9B0D41E1F578F6D00A567C2 /* FIRGetProjectConfigRequestTests.m in Sources */ = {isa = PBXBuildFile; fileRef = D92C82C61F578DF000D5EAFF /* FIRGetProjectConfigRequestTests.m */; };
 		D9B0D41F1F578F6E00A567C2 /* FIRGetProjectConfigRequestTests.m in Sources */ = {isa = PBXBuildFile; fileRef = D92C82C61F578DF000D5EAFF /* FIRGetProjectConfigRequestTests.m */; };
 		D9B0D4201F578F7200A567C2 /* FIRGetProjectConfigResponseTests.m in Sources */ = {isa = PBXBuildFile; fileRef = D92C82C51F578DF000D5EAFF /* FIRGetProjectConfigResponseTests.m */; };
@@ -453,6 +456,7 @@
 		DE7B8DCC1E8EF23A009EB6DF /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = DE7B8D371E8EF202009EB6DF /* main.m */; };
 		DE7B8DD01E8EF246009EB6DF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = DE7B8D2C1E8EF202009EB6DF /* LaunchScreen.storyboard */; };
 		DE7B8DD11E8EF24F009EB6DF /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = DE7B8D2E1E8EF202009EB6DF /* Main.storyboard */; };
+		DE800AE822A07E5B00AC9A23 /* DL-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = DE800AE122A04B6800AC9A23 /* DL-Info.plist */; };
 		DE8DB551221F5B480068BB0E /* FIRInstanceIDWithFCMTest.m in Sources */ = {isa = PBXBuildFile; fileRef = DE8DB550221F5B470068BB0E /* FIRInstanceIDWithFCMTest.m */; };
 		DE9037291FBA5F2400E239D3 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 0672F2F11EBBA7D900818E87 /* GoogleService-Info.plist */; };
 		DE90372A1FBA5F8F00E239D3 /* FArraySortedDictionaryTest.m in Sources */ = {isa = PBXBuildFile; fileRef = 063CB4471EBA7AE200038A59 /* FArraySortedDictionaryTest.m */; };
@@ -1186,12 +1190,12 @@
 		D0FE8A2F1ED9C804003F6722 /* Database_Example_macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Database_Example_macOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0FE8A621ED9C870003F6722 /* Database_Tests_macOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Database_Tests_macOS.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0FE8A8C1ED9C87B003F6722 /* Database_IntegrationTests_macOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Database_IntegrationTests_macOS.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D5B2545FC99E33265C65CAA4 /* FIRStorageListTests.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FIRStorageListTests.m; sourceTree = "<group>"; };
 		D92C82C51F578DF000D5EAFF /* FIRGetProjectConfigResponseTests.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FIRGetProjectConfigResponseTests.m; sourceTree = "<group>"; };
 		D92C82C61F578DF000D5EAFF /* FIRGetProjectConfigRequestTests.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FIRGetProjectConfigRequestTests.m; sourceTree = "<group>"; };
 		DE0E5BB51EA7D91C00FAA825 /* FIRAuthAppCredentialTests.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FIRAuthAppCredentialTests.m; sourceTree = "<group>"; };
 		DE0E5BB91EA7D92E00FAA825 /* FIRVerifyClientRequestTest.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FIRVerifyClientRequestTest.m; sourceTree = "<group>"; };
 		DE0E5BBA1EA7D92E00FAA825 /* FIRVerifyClientResponseTests.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FIRVerifyClientResponseTests.m; sourceTree = "<group>"; };
-		DE17A2A02141FA61002A15ED /* DL-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "DL-Info.plist"; sourceTree = "<group>"; };
 		DE17A2C8214215C1002A15ED /* DynamicLinks_Example_iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DynamicLinks_Example_iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DE17A39A21472F3A002A15ED /* FDLBuilderTestAppObjC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FDLBuilderTestAppObjC.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DE17A3BE21472FF0002A15ED /* LinkTableViewCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = LinkTableViewCell.m; path = DynamicLinks/FDLBuilderTestAppObjC/LinkTableViewCell.m; sourceTree = SOURCE_ROOT; };
@@ -1332,6 +1336,7 @@
 		DE7B8D8D1E8EF203009EB6DF /* SenTest+FWaiter.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "SenTest+FWaiter.m"; sourceTree = "<group>"; };
 		DE7B8D8E1E8EF203009EB6DF /* syncPointSpec.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = syncPointSpec.json; sourceTree = "<group>"; };
 		DE7B8DD21E8F1CA7009EB6DF /* Database-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "Database-Info.plist"; sourceTree = "<group>"; };
+		DE800AE122A04B6800AC9A23 /* DL-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "DL-Info.plist"; sourceTree = "<group>"; };
 		DE8DB550221F5B470068BB0E /* FIRInstanceIDWithFCMTest.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FIRInstanceIDWithFCMTest.m; sourceTree = "<group>"; };
 		DE9314C61E86C6BD0083EDBF /* Auth_Example_iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Auth_Example_iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DE9314DE1E86C6BE0083EDBF /* Auth_Tests_iOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Auth_Tests_iOS.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1882,6 +1887,7 @@
 				DEB139C91E734D9D00AC236D /* FIRStorageTokenAuthorizerTests.m */,
 				DEB139CA1E734D9D00AC236D /* FIRStorageUpdateMetadataTests.m */,
 				DEB139CB1E734D9D00AC236D /* FIRStorageUtilsTests.m */,
+				D5B2545FC99E33265C65CAA4 /* FIRStorageListTests.m */,
 			);
 			path = Unit;
 			sourceTree = "<group>";
@@ -2781,6 +2787,7 @@
 		DEDFF0361FD6143000F7D466 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				DE800AE122A04B6800AC9A23 /* DL-Info.plist */,
 				DEDFF0371FD6143000F7D466 /* GoogleService-Info.plist */,
 				DEDFF0381FD6143000F7D466 /* iOS */,
 			);
@@ -2795,7 +2802,6 @@
 				DEDFF03E1FD6143000F7D466 /* FIRAppDelegate.m */,
 				DEDFF0401FD6143000F7D466 /* FIRViewController.m */,
 				DEDFF0421FD6143000F7D466 /* main.m */,
-				DE17A2A02141FA61002A15ED /* DL-Info.plist */,
 				DEDFF0391FD6143000F7D466 /* LaunchScreen.storyboard */,
 				DEDFF03B1FD6143000F7D466 /* Main.storyboard */,
 			);
@@ -3604,6 +3610,7 @@
 			buildConfigurationList = DEDFF01F1FD6135D00F7D466 /* Build configuration list for PBXNativeTarget "DynamicLinks_Tests_iOS" */;
 			buildPhases = (
 				DE17A2D52142F195002A15ED /* Sources */,
+				DE800AE722A07E5000AC9A23 /* Resources */,
 				AEC1C964E4211C8E5B7CD8C6 /* Frameworks */,
 			);
 			buildRules = (
@@ -4225,6 +4232,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		DE800AE722A07E5000AC9A23 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DE800AE822A07E5B00AC9A23 /* DL-Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DE9314C41E86C6BD0083EDBF /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -4593,6 +4608,7 @@
 				D0EDB2EA1EDA06CB00B6C31B /* FIRStorageTokenAuthorizerTests.m in Sources */,
 				D0EDB2EB1EDA06CB00B6C31B /* FIRStorageReferenceTests.m in Sources */,
 				D0EDB2EC1EDA06CB00B6C31B /* FIRStoragePathTests.m in Sources */,
+				D5B251C16CD531364AA90C58 /* FIRStorageListTests.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -5154,6 +5170,7 @@
 				DEAAD4271FBA49ED0053BF48 /* FIRStorageTestHelpers.m in Sources */,
 				DEAAD4281FBA49ED0053BF48 /* FIRStorageTests.m in Sources */,
 				DEAAD4241FBA49ED0053BF48 /* FIRStorageMetadataTests.m in Sources */,
+				D5B253A8C57176FF8C368F4E /* FIRStorageListTests.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -5184,6 +5201,7 @@
 				DEB13A2E1E73518B00AC236D /* FIRStorageTokenAuthorizerTests.m in Sources */,
 				DEB13A2B1E73518B00AC236D /* FIRStorageReferenceTests.m in Sources */,
 				DEB13A2A1E73518B00AC236D /* FIRStoragePathTests.m in Sources */,
+				D5B2514347161203F929FA47 /* FIRStorageListTests.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -6776,7 +6794,7 @@
 					"\"${PODS_ROOT}/../../Firebase/Storage/Private\"",
 					"$(inherited)",
 				);
-				INFOPLIST_FILE = "$(SRCROOT)/DynamicLinks/App/iOS/DL-Info.plist";
+				INFOPLIST_FILE = "$(SRCROOT)/DynamicLinks/App/DL-Info.plist";
 				MODULE_NAME = ExampleApp;
 				OTHER_LDFLAGS = "$(inherited)";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.google.DynamicLinks-Example-iOS";
@@ -6798,7 +6816,7 @@
 					"\"${PODS_ROOT}/../../Firebase/Storage/Private\"",
 					"$(inherited)",
 				);
-				INFOPLIST_FILE = "$(SRCROOT)/DynamicLinks/App/iOS/DL-Info.plist";
+				INFOPLIST_FILE = "$(SRCROOT)/DynamicLinks/App/DL-Info.plist";
 				MODULE_NAME = ExampleApp;
 				OTHER_LDFLAGS = "$(inherited)";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.google.DynamicLinks-Example-iOS";
@@ -6830,7 +6848,7 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 4ANB9W7R3P;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
-				INFOPLIST_FILE = $SRCROOT/DynamicLinks/FDLBuilderTestAppObjC/Info.plist;
+				INFOPLIST_FILE = "$SRCROOT/DynamicLinks/FDLBuilderTestAppObjC/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 11.4;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MTL_ENABLE_DEBUG_INFO = YES;
@@ -6864,7 +6882,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 4ANB9W7R3P;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
-				INFOPLIST_FILE = $SRCROOT/DynamicLinks/FDLBuilderTestAppObjC/Info.plist;
+				INFOPLIST_FILE = "$SRCROOT/DynamicLinks/FDLBuilderTestAppObjC/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 11.4;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MTL_ENABLE_DEBUG_INFO = NO;
@@ -7128,7 +7146,7 @@
 					"\"${PODS_ROOT}/../../Firebase/Auth/Source\"/**",
 				);
 				INFOPLIST_FILE = Auth/Sample/Application.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 9.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 8.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MTL_ENABLE_DEBUG_INFO = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.google.FirebaseExperimental1;
@@ -7167,7 +7185,7 @@
 					"\"${PODS_ROOT}/../../Firebase/Auth/Source\"/**",
 				);
 				INFOPLIST_FILE = Auth/Sample/Application.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 9.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 8.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MTL_ENABLE_DEBUG_INFO = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.google.FirebaseExperimental1;
@@ -7766,7 +7784,6 @@
 					"$(inherited)",
 					"COCOAPODS=1",
 					"GPB_USE_PROTOBUF_FRAMEWORK_IMPORTS=1",
-					"GUL_APP_DELEGATE_TESTING=1",
 				);
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",

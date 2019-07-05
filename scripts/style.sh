@@ -137,6 +137,13 @@ s%^./%%
 \%^Debug/% d
 \%^Release/% d
 
+# pod gen output
+\%^gen/% d
+
+# Firestore/Swift contains code that is under 'third_party' but should be
+# formatted.
+\%Firestore/Swift/% p
+
 # Sources controlled outside this tree
 \%/third_party/% d
 \%/Firestore/Port/% d

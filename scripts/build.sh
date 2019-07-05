@@ -66,6 +66,9 @@ if [[ -n "${SANITIZERS:-}" ]]; then
   echo "Using sanitizers: $SANITIZERS"
 fi
 
+scripts_dir=$(dirname "${BASH_SOURCE[0]}")
+firestore_emulator="${scripts_dir}/run_firestore_emulator.sh"
+
 # Runs xcodebuild with the given flags, piping output to xcpretty
 # If xcodebuild fails with known error codes, retries once.
 function RunXcodebuild() {
@@ -83,27 +86,35 @@ function RunXcodebuild() {
   fi
 }
 
+ios_flags=(
+  -sdk 'iphonesimulator'
+  -destination 'platform=iOS Simulator,name=iPhone 7'
+)
+macos_flags=(
+  -sdk 'macosx'
+  -destination 'platform=OS X,arch=x86_64'
+)
+tvos_flags=(
+  -sdk "appletvsimulator"
+  -destination 'platform=tvOS Simulator,name=Apple TV'
+)
+
 # Compute standard flags for all platforms
 case "$platform" in
   iOS)
-    xcb_flags=(
-      -sdk 'iphonesimulator'
-      -destination 'platform=iOS Simulator,name=iPhone 7'
-    )
+    xcb_flags=("${ios_flags[@]}")
     ;;
 
   macOS)
-    xcb_flags=(
-      -sdk 'macosx'
-      -destination 'platform=OS X,arch=x86_64'
-    )
+    xcb_flags=("${macos_flags[@]}")
     ;;
 
   tvOS)
-    xcb_flags=(
-      -sdk "appletvsimulator"
-      -destination 'platform=tvOS Simulator,name=Apple TV'
-    )
+    xcb_flags=("${tvos_flags[@]}")
+    ;;
+
+  all)
+    xcb_flags=()
     ;;
 
   *)
@@ -119,11 +130,11 @@ xcb_flags+=(
   COMPILER_INDEX_STORE_ENABLE=NO
 )
 
-# TODO(varconst): --warn-unused-vars - right now, it makes the log overflow on
-# Travis.
+# TODO(varconst): Add --warn-unused-vars and --warn-uninitialized.
+# Right now, it makes the log overflow on Travis because many of our
+# dependencies don't build cleanly this way.
 cmake_options=(
   -Wdeprecated
-  --warn-uninitialized
 )
 
 xcode_version=$(xcodebuild -version | head -n 1)
@@ -168,6 +179,9 @@ if [[ -n "${SANITIZERS:-}" ]]; then
   done
 fi
 
+# Clean the Derived Data between builds to help reduce flakiness.
+rm -rf ~/Library/Developer/Xcode/DerivedData
+
 case "$product-$method-$platform" in
   Firebase-xcodebuild-*)
     RunXcodebuild \
@@ -185,29 +199,8 @@ case "$product-$method-$platform" in
         test
 
     if [[ $platform == 'iOS' ]]; then
-      # Run integration tests (not allowed on PRs)
-      if [ "$TRAVIS_PULL_REQUEST" == "false" ]; then
-        RunXcodebuild \
-          -workspace 'Example/Firebase.xcworkspace' \
-          -scheme "Auth_ApiTests" \
-          "${xcb_flags[@]}" \
-          build \
-          test
-
-        RunXcodebuild \
-          -workspace 'Example/Firebase.xcworkspace' \
-          -scheme "Storage_IntegrationTests_iOS" \
-          "${xcb_flags[@]}" \
-          build \
-          test
-
-        RunXcodebuild \
-          -workspace 'Example/Firebase.xcworkspace' \
-          -scheme "Database_IntegrationTests_iOS" \
-          "${xcb_flags[@]}" \
-          build \
-          test
-      fi
+      # Code Coverage collection is only working on iOS currently.
+      ./scripts/collect_metrics.sh 'Example/Firebase.xcworkspace' "AllUnitTests_$platform"
 
       # Test iOS Objective-C static library build
       cd Example
@@ -220,6 +213,25 @@ case "$product-$method-$platform" in
           "${xcb_flags[@]}" \
           build \
           test
+    fi
+    ;;
+
+  Auth-xcodebuild-*)
+    if [[ "$TRAVIS_PULL_REQUEST" == "false" ||
+          "$TRAVIS_PULL_REQUEST_SLUG" == "$TRAVIS_REPO_SLUG" ]]; then
+      RunXcodebuild \
+        -workspace 'Example/Auth/AuthSample/AuthSample.xcworkspace' \
+        -scheme "Auth_ApiTests" \
+        "${xcb_flags[@]}" \
+        build \
+        test
+
+      RunXcodebuild \
+        -workspace 'Example/Auth/AuthSample/AuthSample.xcworkspace' \
+        -scheme "Auth_E2eTests" \
+        "${xcb_flags[@]}" \
+        build \
+        test
     fi
     ;;
 
@@ -281,7 +293,10 @@ case "$product-$method-$platform" in
         test
     ;;
 
-  Firestore-xcodebuild-iOS)
+  Firestore-xcodebuild-*)
+    "${firestore_emulator}" start
+    trap '"${firestore_emulator}" stop' ERR EXIT
+
     RunXcodebuild \
         -workspace 'Firestore/Example/Firestore.xcworkspace' \
         -scheme "Firestore_Tests_$platform" \
@@ -290,36 +305,25 @@ case "$product-$method-$platform" in
         test
 
     # Firestore_SwiftTests_iOS require Swift 4, which needs Xcode 9
-    if [[ "$xcode_major" -ge 9 ]]; then
+    if [[ "$platform" == 'iOS' && "$xcode_major" -ge 9 ]]; then
       RunXcodebuild \
           -workspace 'Firestore/Example/Firestore.xcworkspace' \
-          -scheme "Firestore_SwiftTests_$platform" \
+          -scheme "Firestore_SwiftTests_iOS" \
           "${xcb_flags[@]}" \
           build \
           test
     fi
 
-    RunXcodebuild \
-        -workspace 'Firestore/Example/Firestore.xcworkspace' \
-        -scheme "Firestore_IntegrationTests_$platform" \
-        "${xcb_flags[@]}" \
-        build
-    ;;
-
-  Firestore-xcodebuild-macOS | Firestore-xcodebuild-tvOS)
-    # TODO(wilhuff): Combine with above once all targets exist
-    RunXcodebuild \
-        -workspace 'Firestore/Example/Firestore.xcworkspace' \
-        -scheme "Firestore_Tests_$platform" \
-        "${xcb_flags[@]}" \
-        build \
-        test
-
-    RunXcodebuild \
-        -workspace 'Firestore/Example/Firestore.xcworkspace' \
-        -scheme "Firestore_IntegrationTests_$platform" \
-        "${xcb_flags[@]}" \
-        build
+    # Firestore_IntegrationTests_iOS require Swift 4, which needs Xcode 9
+    # Other non-iOS platforms don't have swift integration tests yet.
+    if [["$platform" != 'iOS' || "$xcode_major" -ge 9 ]]; then
+      RunXcodebuild \
+          -workspace 'Firestore/Example/Firestore.xcworkspace' \
+          -scheme "Firestore_IntegrationTests_$platform" \
+          "${xcb_flags[@]}" \
+          build \
+          test
+    fi
     ;;
 
   Firestore-cmake-macOS)
@@ -341,45 +345,135 @@ case "$product-$method-$platform" in
         build
     ;;
 
-  GoogleDataTransport-xcodebuild-iOS)
+  GoogleDataTransport-xcodebuild-*)
     RunXcodebuild \
-        -workspace 'GoogleDataTransport/gen/GoogleDataTransport/GoogleDataTransport.xcworkspace' \
-        -scheme "GoogleDataTransport-Unit-Tests-Unit" \
+        -workspace 'gen/GoogleDataTransport/GoogleDataTransport.xcworkspace' \
+        -scheme "GoogleDataTransport-$platform-Unit-Tests-Unit" \
         "${xcb_flags[@]}" \
         build \
         test
 
     RunXcodebuild \
-        -workspace 'GoogleDataTransport/gen/GoogleDataTransport/GoogleDataTransport.xcworkspace' \
-        -scheme "GoogleDataTransport-Unit-Tests-Integration" \
-        "${xcb_flags[@]}" \
-        build \
-        test
-
-    RunXcodebuild \
-        -workspace 'GoogleDataTransport/gen/GoogleDataTransport/GoogleDataTransport.xcworkspace' \
-        -scheme "GoogleDataTransport-Unit-Tests-Lifecycle" \
+        -workspace 'gen/GoogleDataTransport/GoogleDataTransport.xcworkspace' \
+        -scheme "GoogleDataTransport-$platform-Unit-Tests-Lifecycle" \
         "${xcb_flags[@]}" \
         build \
         test
     ;;
 
-  GoogleDataTransportCCTSupport-xcodebuild-iOS)
+  GoogleDataTransportIntegrationTest-xcodebuild-*)
     RunXcodebuild \
-        -workspace 'GoogleDataTransportCCTSupport/gen/GoogleDataTransportCCTSupport/GoogleDataTransportCCTSupport.xcworkspace' \
-        -scheme "GoogleDataTransportCCTSupport-Unit-Tests-Unit" \
-        "${xcb_flags[@]}" \
-        build \
-        test
-
-        RunXcodebuild \
-        -workspace 'GoogleDataTransportCCTSupport/gen/GoogleDataTransportCCTSupport/GoogleDataTransportCCTSupport.xcworkspace' \
-        -scheme "GoogleDataTransportCCTSupport-Unit-Tests-Integration" \
+        -workspace 'gen/GoogleDataTransport/GoogleDataTransport.xcworkspace' \
+        -scheme "GoogleDataTransport-$platform-Unit-Tests-Integration" \
         "${xcb_flags[@]}" \
         build \
         test
     ;;
 
+  GoogleDataTransportCCTSupport-xcodebuild-*)
+    RunXcodebuild \
+        -workspace 'gen/GoogleDataTransportCCTSupport/GoogleDataTransportCCTSupport.xcworkspace' \
+        -scheme "GoogleDataTransportCCTSupport-$platform-Unit-Tests-Unit" \
+        "${xcb_flags[@]}" \
+        build \
+        test
+
+    RunXcodebuild \
+        -workspace 'gen/GoogleDataTransportCCTSupport/GoogleDataTransportCCTSupport.xcworkspace' \
+        -scheme "GoogleDataTransportCCTSupport-$platform-Unit-Tests-Integration" \
+        "${xcb_flags[@]}" \
+        build \
+        test
+    ;;
+
+  Database-xcodebuild-*)
+    RunXcodebuild \
+      -workspace 'gen/FirebaseDatabase/FirebaseDatabase.xcworkspace' \
+      -scheme "FirebaseDatabase-iOS-Unit-unit" \
+      "${ios_flags[@]}" \
+      "${xcb_flags[@]}" \
+      build \
+      test
+    RunXcodebuild \
+      -workspace 'gen/FirebaseDatabase/FirebaseDatabase.xcworkspace' \
+      -scheme "FirebaseDatabase-macOS-Unit-unit" \
+      "${macos_flags[@]}" \
+      "${xcb_flags[@]}" \
+      build \
+      test
+    RunXcodebuild \
+      -workspace 'gen/FirebaseDatabase/FirebaseDatabase.xcworkspace' \
+      -scheme "FirebaseDatabase-tvOS-Unit-unit" \
+      "${tvos_flags[@]}" \
+      "${xcb_flags[@]}" \
+      build \
+      test
+
+    if [[ "$TRAVIS_PULL_REQUEST" == "false" ||
+          "$TRAVIS_PULL_REQUEST_SLUG" == "$TRAVIS_REPO_SLUG" ]]; then
+      # Integration tests are only run on iOS to minimize flake failures.
+      RunXcodebuild \
+        -workspace 'gen/FirebaseDatabase/FirebaseDatabase.xcworkspace' \
+        -scheme "FirebaseDatabase-iOS-Unit-integration" \
+        "${ios_flags[@]}" \
+        "${xcb_flags[@]}" \
+        build \
+        test
+      fi
+    ;;
+
+  Messaging-xcodebuild-*)
+    RunXcodebuild \
+      -workspace 'gen/FirebaseMessaging/FirebaseMessaging.xcworkspace' \
+      -scheme "FirebaseMessaging-iOS-Unit-unit" \
+      "${ios_flags[@]}" \
+      "${xcb_flags[@]}" \
+      build \
+      test
+    RunXcodebuild \
+      -workspace 'gen/FirebaseMessaging/FirebaseMessaging.xcworkspace' \
+      -scheme "FirebaseMessaging-tvOS-Unit-unit" \
+      "${tvos_flags[@]}" \
+      "${xcb_flags[@]}" \
+      build \
+      test
+    ;;
+
+  Storage-xcodebuild-*)
+    RunXcodebuild \
+      -workspace 'gen/FirebaseStorage/FirebaseStorage.xcworkspace' \
+      -scheme "FirebaseStorage-iOS-Unit-unit" \
+      "${ios_flags[@]}" \
+      "${xcb_flags[@]}" \
+      build \
+      test
+    RunXcodebuild \
+      -workspace 'gen/FirebaseStorage/FirebaseStorage.xcworkspace' \
+      -scheme "FirebaseStorage-macOS-Unit-unit" \
+      "${macos_flags[@]}" \
+      "${xcb_flags[@]}" \
+      build \
+      test
+    RunXcodebuild \
+      -workspace 'gen/FirebaseStorage/FirebaseStorage.xcworkspace' \
+      -scheme "FirebaseStorage-tvOS-Unit-unit" \
+      "${tvos_flags[@]}" \
+      "${xcb_flags[@]}" \
+      build \
+      test
+
+    if [[ "$TRAVIS_PULL_REQUEST" == "false" ||
+          "$TRAVIS_PULL_REQUEST_SLUG" == "$TRAVIS_REPO_SLUG" ]]; then
+      # Integration tests are only run on iOS to minimize flake failures.
+      RunXcodebuild \
+        -workspace 'gen/FirebaseStorage/FirebaseStorage.xcworkspace' \
+        -scheme "FirebaseStorage-iOS-Unit-integration" \
+        "${ios_flags[@]}" \
+        "${xcb_flags[@]}" \
+        build \
+        test
+      fi
+    ;;
   *)
     echo "Don't know how to build this product-platform-method combination" 1>&2
     echo "  product=$product" 1>&2

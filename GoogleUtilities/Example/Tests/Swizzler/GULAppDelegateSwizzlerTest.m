@@ -37,10 +37,10 @@ static NSString *const kGULGoogleAppDelegateProxyEnabledPlistKey =
 
 #pragma mark - GULTestAppDelegate
 
-/** This class conforms to the UIApplicationDelegate protocol and is there to be able to test the
+/** This class conforms to the application delegate protocol and is there to be able to test the
  *  App Delegate Swizzler's behavior.
  */
-@interface GULTestAppDelegate : UIResponder <UIApplicationDelegate> {
+@interface GULTestAppDelegate : NSObject <GULApplicationDelegate> {
  @public  // Because we want to access the ivars from outside the class like obj->ivar for testing.
   /** YES if the application:openURL:options: was called on an instance, NO otherwise. */
   BOOL _isOpenURLOptionsMethodCalled;
@@ -70,12 +70,15 @@ static NSString *const kGULGoogleAppDelegateProxyEnabledPlistKey =
 @property(nonatomic, strong) NSData *remoteNotificationsDeviceToken;
 @property(nonatomic, strong) NSError *failToRegisterForRemoteNotificationsError;
 @property(nonatomic, strong) NSDictionary *remoteNotification;
+
+#if TARGET_OS_IOS || TARGET_OS_TV
 @property(nonatomic, copy) void (^remoteNotificationCompletionHandler)(UIBackgroundFetchResult);
+#endif  // TARGET_OS_IOS || TARGET_OS_TV
 
 /**
- * The application is set each time a UIApplicationDelegate method is called
+ * The application is set each time a GULApplicationDelegate method is called
  */
-@property(nonatomic, weak) UIApplication *application;
+@property(nonatomic, weak) GULApplication *application;
 
 @end
 
@@ -88,7 +91,9 @@ static NSString *const kGULGoogleAppDelegateProxyEnabledPlistKey =
 /** YES if GULTestAppDelegate responds to application:openURL:sourceApplication:annotation:, NO
  *  otherwise.
  */
+#if TARGET_OS_IOS || TARGET_OS_TV
 static BOOL gRespondsToOpenURLHandler_iOS8;
+#endif
 
 /** YES if GULTestAppDelegate responds to application:openURL:options:, NO otherwise. */
 static BOOL gRespondsToOpenURLHandler_iOS9;
@@ -106,10 +111,13 @@ static BOOL gRespondsToHandleBackgroundSession;
 + (void)load {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
   // Before being proxied, it should be only be able to respond to
   // application:openURL:sourceApplication:annotation:.
+#if TARGET_OS_IOS || TARGET_OS_TV
   gRespondsToOpenURLHandler_iOS8 = [self
       instancesRespondToSelector:@selector(application:openURL:sourceApplication:annotation:)];
+#endif
   gRespondsToOpenURLHandler_iOS9 =
       [self instancesRespondToSelector:@selector(application:openURL:options:)];
   gRespondsToHandleBackgroundSession =
@@ -132,7 +140,7 @@ static BOOL gRespondsToHandleBackgroundSession;
   return self;
 }
 
-- (BOOL)application:(UIApplication *)app
+- (BOOL)application:(GULApplication *)app
             openURL:(NSURL *)url
             options:(NSDictionary<NSString *, id> *)options {
   self.application = app;
@@ -142,7 +150,8 @@ static BOOL gRespondsToHandleBackgroundSession;
   return NO;
 }
 
-- (BOOL)application:(UIApplication *)application
+#if TARGET_OS_IOS
+- (BOOL)application:(GULApplication *)application
               openURL:(NSURL *)url
     sourceApplication:(NSString *)sourceApplication
            annotation:(id)annotation {
@@ -152,30 +161,31 @@ static BOOL gRespondsToHandleBackgroundSession;
   self.openURLAnnotation = annotation;
   return NO;
 }
+#endif  // TARGET_OS_IOS
 
-- (BOOL)application:(UIApplication *)application
+- (BOOL)application:(GULApplication *)application
     continueUserActivity:(NSUserActivity *)userActivity
-      restorationHandler:(void (^)(NSArray<id<UIUserActivityRestoring>> *__nullable
+      restorationHandler:(void (^)(NSArray<id<GULUserActivityRestoring>> *__nullable
                                        restorableObjects))restorationHandler {
   self.application = application;
   self.userActivity = userActivity;
   return NO;
 }
 
-- (void)application:(UIApplication *)application
+- (void)application:(GULApplication *)application
     handleEventsForBackgroundURLSession:(nonnull NSString *)identifier
                       completionHandler:(nonnull void (^)(void))completionHandler {
   self.application = application;
   _backgroundSessionID = identifier;
 }
 
-- (void)application:(UIApplication *)application
+- (void)application:(GULApplication *)application
     didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken {
   self.application = application;
   self.remoteNotificationsDeviceToken = deviceToken;
 }
 
-- (void)application:(UIApplication *)application
+- (void)application:(GULApplication *)application
     didFailToRegisterForRemoteNotificationsWithError:(NSError *)error {
   self.application = application;
   self.failToRegisterForRemoteNotificationsError = error;
@@ -183,20 +193,24 @@ static BOOL gRespondsToHandleBackgroundSession;
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-implementations"
-- (void)application:(UIApplication *)application
+- (void)application:(GULApplication *)application
     didReceiveRemoteNotification:(NSDictionary *)userInfo {
   self.application = application;
   self.remoteNotification = userInfo;
 }
 #pragma clang diagnostic pop
 
-- (void)application:(UIApplication *)application
+#if TARGET_OS_IOS || TARGET_OS_TV
+
+- (void)application:(GULApplication *)application
     didReceiveRemoteNotification:(NSDictionary *)userInfo
           fetchCompletionHandler:(void (^)(UIBackgroundFetchResult))completionHandler {
   self.application = application;
   self.remoteNotification = userInfo;
   self.remoteNotificationCompletionHandler = completionHandler;
 }
+
+#endif  // TARGET_OS_IOS || TARGET_OS_TV
 
 // These are methods to test whether changing the class still maintains behavior that the app
 // delegate proxy shouldn't have modified.
@@ -211,7 +225,7 @@ static BOOL gRespondsToHandleBackgroundSession;
 
 @end
 
-@interface GULEmptyTestAppDelegate : NSObject <UIApplicationDelegate>
+@interface GULEmptyTestAppDelegate : NSObject <GULApplicationDelegate>
 @end
 
 @implementation GULEmptyTestAppDelegate
@@ -220,7 +234,7 @@ static BOOL gRespondsToHandleBackgroundSession;
 #pragma mark - Interceptor class
 
 /** This is a class used to test whether interceptors work with the App Delegate Swizzler. */
-@interface GULTestInterceptorAppDelegate : UIResponder <UIApplicationDelegate>
+@interface GULTestInterceptorAppDelegate : NSObject <GULApplicationDelegate>
 
 /** URL sent to application:openURL:options:. */
 @property(nonatomic, copy) NSURL *URLForIOS9;
@@ -235,7 +249,7 @@ static BOOL gRespondsToHandleBackgroundSession;
 
 @implementation GULTestInterceptorAppDelegate
 
-- (BOOL)application:(UIApplication *)app
+- (BOOL)application:(GULApplication *)app
             openURL:(NSURL *)url
             options:(NSDictionary<NSString *, id> *)options {
   _URLForIOS9 = [url copy];
@@ -243,7 +257,7 @@ static BOOL gRespondsToHandleBackgroundSession;
 }
 
 #if TARGET_OS_IOS
-- (BOOL)application:(UIApplication *)application
+- (BOOL)application:(GULApplication *)application
               openURL:(nonnull NSURL *)url
     sourceApplication:(nullable NSString *)sourceApplication
            annotation:(nonnull id)annotation {
@@ -254,7 +268,7 @@ static BOOL gRespondsToHandleBackgroundSession;
 
 #if SDK_HAS_USERACTIVITY
 
-- (BOOL)application:(UIApplication *)application
+- (BOOL)application:(GULApplication *)application
     continueUserActivity:(NSUserActivity *)userActivity
       restorationHandler:(void (^)(NSArray<id<UIUserActivityRestoring>> *__nullable
                                        restorableObjects))restorationHandler {
@@ -274,7 +288,7 @@ static BOOL gRespondsToHandleBackgroundSession;
 
 - (void)setUp {
   [super setUp];
-  self.mockSharedApplication = OCMPartialMock([UIApplication sharedApplication]);
+  self.mockSharedApplication = OCMPartialMock([GULApplication sharedApplication]);
 }
 
 - (void)tearDown {
@@ -291,7 +305,7 @@ static BOOL gRespondsToHandleBackgroundSession;
   XCTAssertEqualObjects(NSStringFromClass([notAppDelegate class]), @"NSObject");
 }
 
-/** Tests proxying an object that responds to UIApplicationDelegate protocol and makes sure that
+/** Tests proxying an object that responds to application delegate protocol and makes sure that
  *  it is isa swizzled and that the object after proxying responds to the expected methods
  *  and doesn't have its ivars modified.
  */
@@ -325,19 +339,21 @@ static BOOL gRespondsToHandleBackgroundSession;
 
   XCTAssertTrue([realAppDelegate respondsToSelector:@selector(application:
                                                         continueUserActivity:restorationHandler:)]);
-  XCTAssertTrue([realAppDelegate respondsToSelector:@selector(application:openURL:options:)]);
-  XCTAssertTrue([realAppDelegate
-      respondsToSelector:@selector(application:
-                             handleEventsForBackgroundURLSession:completionHandler:)]);
   XCTAssertTrue([realAppDelegate
       respondsToSelector:@selector(application:didRegisterForRemoteNotificationsWithDeviceToken:)]);
   XCTAssertTrue([realAppDelegate
       respondsToSelector:@selector(application:didFailToRegisterForRemoteNotificationsWithError:)]);
   XCTAssertTrue([realAppDelegate respondsToSelector:@selector(application:
                                                         didReceiveRemoteNotification:)]);
+#if TARGET_OS_IOS || TARGET_OS_TV
+  XCTAssertTrue([realAppDelegate respondsToSelector:@selector(application:openURL:options:)]);
+  XCTAssertTrue([realAppDelegate
+      respondsToSelector:@selector(application:
+                             handleEventsForBackgroundURLSession:completionHandler:)]);
   XCTAssertTrue([realAppDelegate
       respondsToSelector:@selector(application:
                              didReceiveRemoteNotification:fetchCompletionHandler:)]);
+#endif  // TARGET_OS_IOS || TARGET_OS_TV
 
   // Make sure that the class has changed.
   XCTAssertNotEqualObjects([realAppDelegate class], realAppDelegateClassBefore);
@@ -380,13 +396,6 @@ static BOOL gRespondsToHandleBackgroundSession;
 
   XCTAssertTrue([realAppDelegate respondsToSelector:@selector(application:
                                                         continueUserActivity:restorationHandler:)]);
-
-  // The implementation should not be added if there is no original implementation
-  XCTAssertFalse([realAppDelegate respondsToSelector:@selector(application:openURL:options:)]);
-  XCTAssertTrue([realAppDelegate
-      respondsToSelector:@selector(application:
-                             handleEventsForBackgroundURLSession:completionHandler:)]);
-
   // Remote notifications methods should be added only by
   // -proxyOriginalDelegateIncludingAPNSMethods
   XCTAssertFalse([realAppDelegate
@@ -395,9 +404,16 @@ static BOOL gRespondsToHandleBackgroundSession;
       respondsToSelector:@selector(application:didFailToRegisterForRemoteNotificationsWithError:)]);
   XCTAssertFalse([realAppDelegate respondsToSelector:@selector(application:
                                                          didReceiveRemoteNotification:)]);
+#if TARGET_OS_IOS || TARGET_OS_TV
+  // The implementation should not be added if there is no original implementation
+  XCTAssertFalse([realAppDelegate respondsToSelector:@selector(application:openURL:options:)]);
+  XCTAssertTrue([realAppDelegate
+      respondsToSelector:@selector(application:
+                             handleEventsForBackgroundURLSession:completionHandler:)]);
   XCTAssertFalse([realAppDelegate
       respondsToSelector:@selector(application:
                              didReceiveRemoteNotification:fetchCompletionHandler:)]);
+#endif  // TARGET_OS_IOS || TARGET_OS_TV
 
   // Make sure that the class has changed.
   XCTAssertNotEqualObjects([realAppDelegate class], realAppDelegateClassBefore);
@@ -434,12 +450,6 @@ static BOOL gRespondsToHandleBackgroundSession;
   XCTAssertTrue([realAppDelegate respondsToSelector:@selector(application:
                                                         continueUserActivity:restorationHandler:)]);
 
-  // The implementation should not be added if there is no original implementation
-  XCTAssertFalse([realAppDelegate respondsToSelector:@selector(application:openURL:options:)]);
-  XCTAssertTrue([realAppDelegate
-      respondsToSelector:@selector(application:
-                             handleEventsForBackgroundURLSession:completionHandler:)]);
-
   // Remote notifications methods should be added only by
   // -proxyOriginalDelegateIncludingAPNSMethods
   XCTAssertTrue([realAppDelegate
@@ -449,10 +459,20 @@ static BOOL gRespondsToHandleBackgroundSession;
   XCTAssertTrue([realAppDelegate respondsToSelector:@selector(application:
                                                         didReceiveRemoteNotification:)]);
 
+#if TARGET_OS_IOS || TARGET_OS_TV
+  // The implementation should not be added if there is no original implementation
+  XCTAssertFalse([realAppDelegate respondsToSelector:@selector(application:openURL:options:)]);
+
+  XCTAssertTrue([realAppDelegate
+      respondsToSelector:@selector(application:
+                             handleEventsForBackgroundURLSession:completionHandler:)]);
+
   // The implementation should not be added if there is no original implementation
   XCTAssertFalse([realAppDelegate
       respondsToSelector:@selector(application:
                              didReceiveRemoteNotification:fetchCompletionHandler:)]);
+
+#endif  // TARGET_OS_IOS || TARGET_OS_TV
 
   // Make sure that the class has changed.
   XCTAssertNotEqualObjects([realAppDelegate class], realAppDelegateClassBefore);
@@ -488,13 +508,6 @@ static BOOL gRespondsToHandleBackgroundSession;
 
   XCTAssertTrue([realAppDelegate respondsToSelector:@selector(application:
                                                         continueUserActivity:restorationHandler:)]);
-
-  // The implementation should not be added if there is no original implementation
-  XCTAssertFalse([realAppDelegate respondsToSelector:@selector(application:openURL:options:)]);
-  XCTAssertTrue([realAppDelegate
-      respondsToSelector:@selector(application:
-                             handleEventsForBackgroundURLSession:completionHandler:)]);
-
   // Proxy remote notifications methods
   [GULAppDelegateSwizzler proxyOriginalDelegateIncludingAPNSMethods];
 
@@ -504,11 +517,18 @@ static BOOL gRespondsToHandleBackgroundSession;
       respondsToSelector:@selector(application:didFailToRegisterForRemoteNotificationsWithError:)]);
   XCTAssertTrue([realAppDelegate respondsToSelector:@selector(application:
                                                         didReceiveRemoteNotification:)]);
+#if TARGET_OS_IOS || TARGET_OS_TV
+  // The implementation should not be added if there is no original implementation
+  XCTAssertFalse([realAppDelegate respondsToSelector:@selector(application:openURL:options:)]);
+  XCTAssertTrue([realAppDelegate
+      respondsToSelector:@selector(application:
+                             handleEventsForBackgroundURLSession:completionHandler:)]);
 
   // The implementation should not be added if there is no original implementation
   XCTAssertFalse([realAppDelegate
       respondsToSelector:@selector(application:
                              didReceiveRemoteNotification:fetchCompletionHandler:)]);
+#endif  // TARGET_OS_IOS || TARGET_OS_TV
 
   // Make sure that the class has changed.
   XCTAssertNotEqualObjects([realAppDelegate class], realAppDelegateClassBefore);
@@ -522,7 +542,7 @@ static BOOL gRespondsToHandleBackgroundSession;
   // Create the proxy.
   [GULAppDelegateSwizzler proxyOriginalDelegate];
 
-  UIApplication *currentApplication = [UIApplication sharedApplication];
+  GULApplication *currentApplication = [GULApplication sharedApplication];
   NSString *sessionID = @"123";
   void (^nilHandler)(void) = nil;
   [realAppDelegate application:currentApplication
@@ -544,13 +564,13 @@ static BOOL gRespondsToHandleBackgroundSession;
 #pragma clang diagnostic pop
   XCTAssertEqual([GULAppDelegateSwizzler interceptors].count, 0);
 
-  // Try to register some random object that does not conform to UIApplicationDelegate.
+  // Try to register some random object that does not conform to application delegate.
   NSObject *randomObject = [[NSObject alloc] init];
 
-  XCTAssertThrows(
-      [GULAppDelegateSwizzler
-          registerAppDelegateInterceptor:(id<UIApplicationDelegate>)randomObject],
-      @"Should not register interceptor that does not conform to UIApplicationDelegate");
+  XCTAssertThrows([GULAppDelegateSwizzler
+                      registerAppDelegateInterceptor:(id<GULApplicationDelegate>)randomObject],
+                  @"Should not register interceptor that does not conform to %@Delegate",
+                  kGULApplicationClassName);
   XCTAssertEqual([GULAppDelegateSwizzler interceptors].count, 0);
 
   GULTestInterceptorAppDelegate *interceptorAppDelegate =
@@ -626,12 +646,17 @@ static BOOL gRespondsToHandleBackgroundSession;
 /** Tests that if the app delegate changes after it has been proxied, the App Delegate Swizzler
  *  handles it correctly.
  */
-- (void)skipped_testAppDelegateInstance {
-  id originalDelegate = [UIApplication sharedApplication].delegate;
+- (void)testAppDelegateInstance {
+  // The test logic involves using KVC on the UIApplication.delegate propery. This does not really
+  // work well with OCMPartialMock([GULApplication sharedApplication]) and triggers issue
+  // https://github.com/erikdoe/ocmock/issues/346.
+  // Let's stop mocking the shared application for this particular test.
+  [self.mockSharedApplication stopMocking];
+  self.mockSharedApplication = nil;
 
   GULTestAppDelegate *realAppDelegate = [[GULTestAppDelegate alloc] init];
 
-  [UIApplication sharedApplication].delegate = realAppDelegate;
+  [GULApplication sharedApplication].delegate = realAppDelegate;
   [GULAppDelegateSwizzler proxyOriginalDelegate];
 
   XCTAssertEqualObjects([GULAppDelegateSwizzler originalDelegate], realAppDelegate);
@@ -639,108 +664,107 @@ static BOOL gRespondsToHandleBackgroundSession;
   GULTestInterceptorAppDelegate *anotherAppDelegate = [[GULTestInterceptorAppDelegate alloc] init];
   XCTAssertNotEqualObjects(realAppDelegate, anotherAppDelegate);
 
-  [UIApplication sharedApplication].delegate = anotherAppDelegate;
+  [GULApplication sharedApplication].delegate = anotherAppDelegate;
   // Make sure that the new delegate is swizzled out and set correctly.
   XCTAssertNil([GULAppDelegateSwizzler originalDelegate]);
 
   [GULAppDelegateSwizzler proxyOriginalDelegate];
-  XCTAssertEqualObjects([GULAppDelegateSwizzler originalDelegate], anotherAppDelegate);
 
-  // Make sure that it is set to nil correctly.
-  [UIApplication sharedApplication].delegate = nil;
-  XCTAssertNil([UIApplication sharedApplication].delegate);
-  XCTAssertNil([GULAppDelegateSwizzler originalDelegate]);
-
-  [UIApplication sharedApplication].delegate = originalDelegate;
-  XCTAssertEqualObjects([UIApplication sharedApplication].delegate, originalDelegate);
+  // Swizzling of an updated app delegate is not supported so far.
   XCTAssertNil([GULAppDelegateSwizzler originalDelegate]);
 }
 
 #pragma mark - Tests the behaviour with interceptors
 
+#if TARGET_OS_IOS || TARGET_OS_TV
 /** Tests that application:openURL:options: is invoked on the interceptor if it exists. */
 - (void)testApplicationOpenURLOptionsIsInvokedOnInterceptors {
-  id interceptor = OCMProtocolMock(@protocol(UIApplicationDelegate));
-  OCMExpect([interceptor application:OCMOCK_ANY openURL:OCMOCK_ANY options:OCMOCK_ANY])
-      .andReturn(NO);
+  if (@available(iOS 10, *)) {
+    id interceptor = OCMProtocolMock(@protocol(GULApplicationDelegate));
+    OCMExpect([interceptor application:OCMOCK_ANY openURL:OCMOCK_ANY options:OCMOCK_ANY])
+        .andReturn(NO);
 
-  id interceptor2 = OCMProtocolMock(@protocol(UIApplicationDelegate));
-  OCMExpect([interceptor2 application:OCMOCK_ANY openURL:OCMOCK_ANY options:OCMOCK_ANY])
-      .andReturn(NO);
+    id interceptor2 = OCMProtocolMock(@protocol(GULApplicationDelegate));
+    OCMExpect([interceptor2 application:OCMOCK_ANY openURL:OCMOCK_ANY options:OCMOCK_ANY])
+        .andReturn(NO);
 
-  NSURL *testURL = [[NSURL alloc] initWithString:@"https://www.google.com"];
-  NSDictionary *testOpenURLOptions = @{UIApplicationOpenURLOptionUniversalLinksOnly : @"test"};
+    NSURL *testURL = [[NSURL alloc] initWithString:@"https://www.google.com"];
+    NSDictionary *testOpenURLOptions = @{UIApplicationOpenURLOptionUniversalLinksOnly : @"test"};
 
-  GULTestAppDelegate *testAppDelegate = [[GULTestAppDelegate alloc] init];
-  OCMStub([self.mockSharedApplication delegate]).andReturn(testAppDelegate);
+    GULTestAppDelegate *testAppDelegate = [[GULTestAppDelegate alloc] init];
+    OCMStub([self.mockSharedApplication delegate]).andReturn(testAppDelegate);
 
-  [GULAppDelegateSwizzler proxyOriginalDelegate];
-  [GULAppDelegateSwizzler registerAppDelegateInterceptor:interceptor];
-  [GULAppDelegateSwizzler registerAppDelegateInterceptor:interceptor2];
+    [GULAppDelegateSwizzler proxyOriginalDelegate];
+    [GULAppDelegateSwizzler registerAppDelegateInterceptor:interceptor];
+    [GULAppDelegateSwizzler registerAppDelegateInterceptor:interceptor2];
 
-  [testAppDelegate application:[UIApplication sharedApplication]
-                       openURL:testURL
-                       options:testOpenURLOptions];
-  OCMVerifyAll(interceptor);
-  OCMVerifyAll(interceptor2);
+    [testAppDelegate application:[GULApplication sharedApplication]
+                         openURL:testURL
+                         options:testOpenURLOptions];
+    OCMVerifyAll(interceptor);
+    OCMVerifyAll(interceptor2);
 
-  // Check that original implementation was called with proper parameters
-  XCTAssertEqual(testAppDelegate.application, [UIApplication sharedApplication]);
-  XCTAssertEqual(testAppDelegate.url, testURL);
+    // Check that original implementation was called with proper parameters
+    XCTAssertEqual(testAppDelegate.application, [GULApplication sharedApplication]);
+    XCTAssertEqual(testAppDelegate.url, testURL);
+  }
 }
 
 /** Tests that the result of application:openURL:options: from all interceptors is ORed. */
 - (void)testResultOfApplicationOpenURLOptionsIsORed {
-  NSURL *testURL = [[NSURL alloc] initWithString:@"https://www.google.com"];
-  NSDictionary *testOpenURLOptions = @{UIApplicationOpenURLOptionUniversalLinksOnly : @"test"};
+  if (@available(iOS 10, *)) {
+    NSURL *testURL = [[NSURL alloc] initWithString:@"https://www.google.com"];
+    NSDictionary *testOpenURLOptions = @{UIApplicationOpenURLOptionUniversalLinksOnly : @"test"};
 
-  GULTestAppDelegate *testAppDelegate = [[GULTestAppDelegate alloc] init];
-  OCMStub([self.mockSharedApplication delegate]).andReturn(testAppDelegate);
-  [GULAppDelegateSwizzler proxyOriginalDelegate];
+    GULTestAppDelegate *testAppDelegate = [[GULTestAppDelegate alloc] init];
+    OCMStub([self.mockSharedApplication delegate]).andReturn(testAppDelegate);
+    [GULAppDelegateSwizzler proxyOriginalDelegate];
 
-  BOOL shouldOpen = [testAppDelegate application:[UIApplication sharedApplication]
-                                         openURL:testURL
-                                         options:testOpenURLOptions];
-  // Verify that the original app delegate returns NO.
-  XCTAssertFalse(shouldOpen);
+    BOOL shouldOpen = [testAppDelegate application:[GULApplication sharedApplication]
+                                           openURL:testURL
+                                           options:testOpenURLOptions];
+    // Verify that the original app delegate returns NO.
+    XCTAssertFalse(shouldOpen);
 
-  id interceptor = OCMProtocolMock(@protocol(UIApplicationDelegate));
-  OCMExpect([interceptor application:OCMOCK_ANY openURL:OCMOCK_ANY options:OCMOCK_ANY])
-      .andReturn(NO);
-  [GULAppDelegateSwizzler registerAppDelegateInterceptor:interceptor];
-  shouldOpen = [testAppDelegate application:[UIApplication sharedApplication]
-                                    openURL:testURL
-                                    options:testOpenURLOptions];
-  // Verify that if the only interceptor returns NO, the value is still NO.
-  XCTAssertFalse(shouldOpen);
+    id interceptor = OCMProtocolMock(@protocol(GULApplicationDelegate));
+    OCMExpect([interceptor application:OCMOCK_ANY openURL:OCMOCK_ANY options:OCMOCK_ANY])
+        .andReturn(NO);
+    [GULAppDelegateSwizzler registerAppDelegateInterceptor:interceptor];
+    shouldOpen = [testAppDelegate application:[GULApplication sharedApplication]
+                                      openURL:testURL
+                                      options:testOpenURLOptions];
+    // Verify that if the only interceptor returns NO, the value is still NO.
+    XCTAssertFalse(shouldOpen);
 
-  id interceptor2 = OCMProtocolMock(@protocol(UIApplicationDelegate));
-  OCMExpect([interceptor2 application:OCMOCK_ANY openURL:OCMOCK_ANY options:OCMOCK_ANY])
-      .andReturn(YES);
-  [GULAppDelegateSwizzler registerAppDelegateInterceptor:interceptor2];
+    id interceptor2 = OCMProtocolMock(@protocol(GULApplicationDelegate));
+    OCMExpect([interceptor2 application:OCMOCK_ANY openURL:OCMOCK_ANY options:OCMOCK_ANY])
+        .andReturn(YES);
+    [GULAppDelegateSwizzler registerAppDelegateInterceptor:interceptor2];
 
-  OCMExpect([interceptor application:OCMOCK_ANY openURL:OCMOCK_ANY options:OCMOCK_ANY])
-      .andReturn(NO);
-  shouldOpen = [testAppDelegate application:[UIApplication sharedApplication]
-                                    openURL:testURL
-                                    options:testOpenURLOptions];
-  // Verify that if one of the two interceptors returns YES, the value is YES.
-  XCTAssertTrue(shouldOpen);
+    OCMExpect([interceptor application:OCMOCK_ANY openURL:OCMOCK_ANY options:OCMOCK_ANY])
+        .andReturn(NO);
+    shouldOpen = [testAppDelegate application:[GULApplication sharedApplication]
+                                      openURL:testURL
+                                      options:testOpenURLOptions];
+    // Verify that if one of the two interceptors returns YES, the value is YES.
+    XCTAssertTrue(shouldOpen);
+  }
 }
+#endif  // TARGET_OS_IOS || TARGET_OS_TV
 
 #if TARGET_OS_IOS
 /** Tests that application:openURL:sourceApplication:annotation: is invoked on the interceptors if
  *  it exists.
  */
 - (void)testApplicationOpenURLSourceApplicationAnnotationIsInvokedOnInterceptors {
-  id interceptor = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor application:OCMOCK_ANY
                              openURL:OCMOCK_ANY
                    sourceApplication:OCMOCK_ANY
                           annotation:OCMOCK_ANY])
       .andReturn(NO);
 
-  id interceptor2 = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor2 = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor2 application:OCMOCK_ANY
                               openURL:OCMOCK_ANY
                     sourceApplication:OCMOCK_ANY
@@ -758,7 +782,7 @@ static BOOL gRespondsToHandleBackgroundSession;
 
   NSString *sourceApplication = @"testApp";
   NSString *annotation = @"testAnnotation";
-  [testAppDelegate application:[UIApplication sharedApplication]
+  [testAppDelegate application:[GULApplication sharedApplication]
                        openURL:testURL
              sourceApplication:sourceApplication
                     annotation:annotation];
@@ -767,7 +791,7 @@ static BOOL gRespondsToHandleBackgroundSession;
   OCMVerifyAll(interceptor2);
 
   // Check that original implementation was called with proper parameters
-  XCTAssertEqual(testAppDelegate.application, [UIApplication sharedApplication]);
+  XCTAssertEqual(testAppDelegate.application, [GULApplication sharedApplication]);
   XCTAssertEqual(testAppDelegate.url, testURL);
   XCTAssertEqual(testAppDelegate.openURLSourceApplication, sourceApplication);
   XCTAssertEqual(testAppDelegate.openURLAnnotation, annotation);
@@ -782,28 +806,28 @@ static BOOL gRespondsToHandleBackgroundSession;
   NSURL *testURL = [[NSURL alloc] initWithString:@"https://www.google.com"];
   [GULAppDelegateSwizzler proxyOriginalDelegate];
 
-  BOOL shouldOpen = [testAppDelegate application:[UIApplication sharedApplication]
+  BOOL shouldOpen = [testAppDelegate application:[GULApplication sharedApplication]
                                          openURL:testURL
                                sourceApplication:@"test"
                                       annotation:@"test"];
   // Verify that without interceptors the result is NO.
   XCTAssertFalse(shouldOpen);
 
-  id interceptor = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor application:OCMOCK_ANY
                              openURL:OCMOCK_ANY
                    sourceApplication:OCMOCK_ANY
                           annotation:OCMOCK_ANY])
       .andReturn(NO);
   [GULAppDelegateSwizzler registerAppDelegateInterceptor:interceptor];
-  shouldOpen = [testAppDelegate application:[UIApplication sharedApplication]
+  shouldOpen = [testAppDelegate application:[GULApplication sharedApplication]
                                     openURL:testURL
                           sourceApplication:@"test"
                                  annotation:@"test"];
   // The result is still NO if the only interceptor returns NO.
   XCTAssertFalse(shouldOpen);
 
-  id interceptor2 = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor2 = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor2 application:OCMOCK_ANY
                               openURL:OCMOCK_ANY
                     sourceApplication:OCMOCK_ANY
@@ -815,7 +839,7 @@ static BOOL gRespondsToHandleBackgroundSession;
                           annotation:OCMOCK_ANY])
       .andReturn(NO);
   [GULAppDelegateSwizzler registerAppDelegateInterceptor:interceptor2];
-  shouldOpen = [testAppDelegate application:[UIApplication sharedApplication]
+  shouldOpen = [testAppDelegate application:[GULApplication sharedApplication]
                                     openURL:testURL
                           sourceApplication:@"test"
                                  annotation:@"test"];
@@ -824,16 +848,17 @@ static BOOL gRespondsToHandleBackgroundSession;
 }
 #endif  // TARGET_OS_IOS
 
+#if TARGET_OS_IOS || TARGET_OS_TV
 /** Tests that application:handleEventsForBackgroundURLSession:completionHandler: is invoked on the
  *  interceptors if it exists.
  */
 - (void)testApplicationHandleEventsForBackgroundURLSessionIsInvokedOnInterceptors {
-  id interceptor = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor application:OCMOCK_ANY
       handleEventsForBackgroundURLSession:OCMOCK_ANY
                         completionHandler:OCMOCK_ANY]);
 
-  id interceptor2 = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor2 = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor2 application:OCMOCK_ANY
       handleEventsForBackgroundURLSession:OCMOCK_ANY
                         completionHandler:OCMOCK_ANY]);
@@ -846,7 +871,7 @@ static BOOL gRespondsToHandleBackgroundSession;
   [GULAppDelegateSwizzler registerAppDelegateInterceptor:interceptor2];
 
   NSString *backgroundSessionID = @"testBackgroundSessionID";
-  [testAppDelegate application:[UIApplication sharedApplication]
+  [testAppDelegate application:[GULApplication sharedApplication]
       handleEventsForBackgroundURLSession:backgroundSessionID
                         completionHandler:^{
                         }];
@@ -855,21 +880,22 @@ static BOOL gRespondsToHandleBackgroundSession;
   OCMVerifyAll(interceptor2);
 
   // Check that original implementation was called with proper parameters
-  XCTAssertEqual(testAppDelegate.application, [UIApplication sharedApplication]);
+  XCTAssertEqual(testAppDelegate.application, [GULApplication sharedApplication]);
   XCTAssertEqual(testAppDelegate->_backgroundSessionID, backgroundSessionID);
 }
+#endif  // TARGET_OS_IOS || TARGET_OS_TV
 
 /** Tests that application:continueUserActivity:restorationHandler: is invoked on the interceptors
  *  if it exists.
  */
 - (void)testApplicationContinueUserActivityRestorationHandlerIsInvokedOnInterceptors {
-  id interceptor = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor application:OCMOCK_ANY
                 continueUserActivity:OCMOCK_ANY
                   restorationHandler:OCMOCK_ANY])
       .andReturn(NO);
 
-  id interceptor2 = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor2 = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor2 application:OCMOCK_ANY
                  continueUserActivity:OCMOCK_ANY
                    restorationHandler:OCMOCK_ANY])
@@ -884,7 +910,7 @@ static BOOL gRespondsToHandleBackgroundSession;
   [GULAppDelegateSwizzler registerAppDelegateInterceptor:interceptor];
   [GULAppDelegateSwizzler registerAppDelegateInterceptor:interceptor2];
 
-  [testAppDelegate application:[UIApplication sharedApplication]
+  [testAppDelegate application:[GULApplication sharedApplication]
           continueUserActivity:testUserActivity
             restorationHandler:^(NSArray *restorableObjects){
             }];
@@ -892,7 +918,7 @@ static BOOL gRespondsToHandleBackgroundSession;
   OCMVerifyAll(interceptor2);
 
   // Check that original implementation was called with proper parameters
-  XCTAssertEqual(testAppDelegate.application, [UIApplication sharedApplication]);
+  XCTAssertEqual(testAppDelegate.application, [GULApplication sharedApplication]);
   XCTAssertEqual(testAppDelegate.userActivity, testUserActivity);
 }
 
@@ -905,27 +931,27 @@ static BOOL gRespondsToHandleBackgroundSession;
   [GULAppDelegateSwizzler proxyOriginalDelegate];
   NSUserActivity *testUserActivity = [[NSUserActivity alloc] initWithActivityType:@"test"];
 
-  BOOL shouldContinueUserActvitiy = [testAppDelegate application:[UIApplication sharedApplication]
+  BOOL shouldContinueUserActvitiy = [testAppDelegate application:[GULApplication sharedApplication]
                                             continueUserActivity:testUserActivity
                                               restorationHandler:^(NSArray *restorableObjects){
                                               }];
   // Verify that it is NO when there are no interceptors.
   XCTAssertFalse(shouldContinueUserActvitiy);
 
-  id interceptor = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor application:OCMOCK_ANY
                 continueUserActivity:OCMOCK_ANY
                   restorationHandler:OCMOCK_ANY])
       .andReturn(NO);
   [GULAppDelegateSwizzler registerAppDelegateInterceptor:interceptor];
-  shouldContinueUserActvitiy = [testAppDelegate application:[UIApplication sharedApplication]
+  shouldContinueUserActvitiy = [testAppDelegate application:[GULApplication sharedApplication]
                                        continueUserActivity:testUserActivity
                                          restorationHandler:^(NSArray *restorableObjects){
                                          }];
   // Verify that it is NO when the only interceptor returns a NO.
   XCTAssertFalse(shouldContinueUserActvitiy);
 
-  id interceptor2 = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor2 = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor2 application:OCMOCK_ANY
                  continueUserActivity:OCMOCK_ANY
                    restorationHandler:OCMOCK_ANY])
@@ -936,7 +962,7 @@ static BOOL gRespondsToHandleBackgroundSession;
                 continueUserActivity:OCMOCK_ANY
                   restorationHandler:OCMOCK_ANY])
       .andReturn(NO);
-  shouldContinueUserActvitiy = [testAppDelegate application:[UIApplication sharedApplication]
+  shouldContinueUserActvitiy = [testAppDelegate application:[GULApplication sharedApplication]
                                        continueUserActivity:testUserActivity
                                          restorationHandler:^(NSArray *restorableObjects){
                                          }];
@@ -947,13 +973,13 @@ static BOOL gRespondsToHandleBackgroundSession;
 
 - (void)testApplicationDidRegisterForRemoteNotificationsIsInvokedOnInterceptors {
   NSData *deviceToken = [NSData data];
-  UIApplication *application = [UIApplication sharedApplication];
+  GULApplication *application = [GULApplication sharedApplication];
 
-  id interceptor = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor application:application
       didRegisterForRemoteNotificationsWithDeviceToken:deviceToken]);
 
-  id interceptor2 = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor2 = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor2 application:application
       didRegisterForRemoteNotificationsWithDeviceToken:deviceToken]);
 
@@ -975,13 +1001,13 @@ static BOOL gRespondsToHandleBackgroundSession;
 
 - (void)testApplicationDidFailToRegisterForRemoteNotificationsIsInvokedOnInterceptors {
   NSError *error = [NSError errorWithDomain:@"test" code:-1 userInfo:nil];
-  UIApplication *application = [UIApplication sharedApplication];
+  GULApplication *application = [GULApplication sharedApplication];
 
-  id interceptor = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor application:application
       didFailToRegisterForRemoteNotificationsWithError:error]);
 
-  id interceptor2 = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor2 = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor2 application:application
       didFailToRegisterForRemoteNotificationsWithError:error]);
 
@@ -1004,12 +1030,12 @@ static BOOL gRespondsToHandleBackgroundSession;
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 - (void)testApplicationDidReceiveRemoteNotificationIsInvokedOnInterceptors {
   NSDictionary *notification = @{};
-  UIApplication *application = [UIApplication sharedApplication];
+  GULApplication *application = [GULApplication sharedApplication];
 
-  id interceptor = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor application:application didReceiveRemoteNotification:notification]);
 
-  id interceptor2 = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor2 = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor2 application:application didReceiveRemoteNotification:notification]);
 
   GULTestAppDelegate *testAppDelegate = [[GULTestAppDelegate alloc] init];
@@ -1028,18 +1054,19 @@ static BOOL gRespondsToHandleBackgroundSession;
 }
 #pragma clang diagnostic pop
 
+#if TARGET_OS_IOS || TARGET_OS_TV
 - (void)testApplicationDidReceiveRemoteNotificationWithCompletionIsInvokedOnInterceptors {
   NSDictionary *notification = @{};
-  UIApplication *application = [UIApplication sharedApplication];
+  GULApplication *application = [GULApplication sharedApplication];
   void (^completion)(UIBackgroundFetchResult) = ^(UIBackgroundFetchResult result) {
   };
 
-  id interceptor = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor application:application
         didReceiveRemoteNotification:notification
               fetchCompletionHandler:completion]);
 
-  id interceptor2 = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id interceptor2 = OCMProtocolMock(@protocol(GULApplicationDelegate));
   OCMExpect([interceptor2 application:application
          didReceiveRemoteNotification:notification
                fetchCompletionHandler:completion]);
@@ -1078,6 +1105,7 @@ static BOOL gRespondsToHandleBackgroundSession;
       respondsToSelector:@selector(application:
                              didReceiveRemoteNotification:fetchCompletionHandler:)]);
 }
+#endif  // TARGET_OS_IOS || TARGET_OS_TV
 
 #pragma mark - Tests to test that Plist flag is honored
 
@@ -1230,12 +1258,13 @@ static BOOL gRespondsToHandleBackgroundSession;
   [[[mainBundleMock stub] andReturn:mainDictionary] infoDictionary];
   XCTAssertFalse([GULAppDelegateSwizzler isAppDelegateProxyEnabled]);
 
-  id originalAppDelegate = OCMProtocolMock(@protocol(UIApplicationDelegate));
+  id originalAppDelegate = OCMProtocolMock(@protocol(GULApplicationDelegate));
   Class originalAppDelegateClass = [originalAppDelegate class];
   XCTAssertNotNil(originalAppDelegate);
   OCMStub([self.mockSharedApplication delegate]).andReturn(originalAppDelegate);
 
   [GULAppDelegateSwizzler proxyOriginalDelegate];
+  [GULAppDelegateSwizzler proxyOriginalDelegateIncludingAPNSMethods];
   XCTAssertEqualObjects([originalAppDelegate class], originalAppDelegateClass);
 
   [mainBundleMock stopMocking];
@@ -1256,6 +1285,19 @@ static BOOL gRespondsToHandleBackgroundSession;
   OCMStub([self.mockSharedApplication delegate]).andReturn(originalAppDelegate);
 
   [GULAppDelegateSwizzler proxyOriginalDelegate];
+  XCTAssertNotEqualObjects([originalAppDelegate class], originalAppDelegateClass);
+}
+
+- (void)testAppDelegateIsProxiedIncludingAPNSMethodsWhenEnabled {
+  // App Delegate Proxying is enabled by default.
+  XCTAssertTrue([GULAppDelegateSwizzler isAppDelegateProxyEnabled]);
+
+  id originalAppDelegate = [[GULTestAppDelegate alloc] init];
+  Class originalAppDelegateClass = [originalAppDelegate class];
+  XCTAssertNotNil(originalAppDelegate);
+  OCMStub([self.mockSharedApplication delegate]).andReturn(originalAppDelegate);
+
+  [GULAppDelegateSwizzler proxyOriginalDelegateIncludingAPNSMethods];
   XCTAssertNotEqualObjects([originalAppDelegate class], originalAppDelegateClass);
 }
 

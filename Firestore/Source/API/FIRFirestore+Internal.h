@@ -40,12 +40,11 @@ NS_ASSUME_NONNULL_BEGIN
  * Initializes a Firestore object with all the required parameters directly. This exists so that
  * tests can create FIRFirestore objects without needing FIRApp.
  */
-- (instancetype)initWithProjectID:(std::string)projectID
-                         database:(std::string)database
-                   persistenceKey:(std::string)persistenceKey
-              credentialsProvider:(std::unique_ptr<auth::CredentialsProvider>)credentialsProvider
-                      workerQueue:(std::unique_ptr<util::AsyncQueue>)workerQueue
-                      firebaseApp:(FIRApp *)app;
+- (instancetype)initWithDatabaseID:(model::DatabaseId)databaseID
+                    persistenceKey:(std::string)persistenceKey
+               credentialsProvider:(std::unique_ptr<auth::CredentialsProvider>)credentialsProvider
+                       workerQueue:(std::shared_ptr<util::AsyncQueue>)workerQueue
+                       firebaseApp:(FIRApp *)app;
 @end
 
 /** Internal FIRFirestore API we don't want exposed in our public header files. */
@@ -65,12 +64,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)shutdownWithCompletion:(nullable void (^)(NSError *_Nullable error))completion
     NS_SWIFT_NAME(shutdown(completion:));
 
+- (const std::shared_ptr<util::AsyncQueue> &)workerQueue;
+
 @property(nonatomic, assign, readonly) std::shared_ptr<api::Firestore> wrapped;
 
-@property(nonatomic, assign, readonly) util::AsyncQueue *workerQueue;
-
-// FIRFirestore owns the DatabaseId instance.
-@property(nonatomic, assign, readonly) const model::DatabaseId *databaseID;
+@property(nonatomic, assign, readonly) const model::DatabaseId &databaseID;
 @property(nonatomic, strong, readonly) FSTUserDataConverter *dataConverter;
 
 @end

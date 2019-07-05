@@ -75,12 +75,13 @@ struct FrameworkBuilder {
   ///   - cacheKey: The key used for caching this framework build. If nil, the framework name will
   ///               be used.
   ///   - cacheEnabled: Flag for enabling the cache. Defaults to false.
-  /// - Returns: A URL to the framework that was built (or pulled from the cache) and a URL to the
-  ///     Resources directory containing all required bundles.
+  /// - Parameter logsOutputDir: The path to the directory to place build logs.
+  /// - Returns: A URL to the framework that was built (or pulled from the cache).
   public func buildFramework(withName podName: String,
                              version: String,
                              cacheKey: String?,
-                             cacheEnabled: Bool = false) -> (framework: URL, resources: URL) {
+                             cacheEnabled: Bool = false,
+                             logsOutputDir: URL? = nil) -> URL {
     print("Building \(podName)")
 
 //  Cache is temporarily disabled due to pod cache list issues.
@@ -120,13 +121,12 @@ struct FrameworkBuilder {
     // Build the full cached framework path.
     let cachedFrameworkDir = cachedFrameworkRoot.appendingPathComponent("\(podName).framework")
     let cachedFrameworkExists = fileManager.directoryExists(at: cachedFrameworkDir)
-    let cachedResourcesDir = cachedFrameworkRoot.appendingPathComponent("Resources")
     if cachedFrameworkExists, cacheEnabled {
       print("Framework \(podName) version \(version) has already been built and cached at " +
         "\(cachedFrameworkDir)")
-      return (cachedFrameworkDir, cachedResourcesDir)
+      return cachedFrameworkDir
     } else {
-      let (frameworkDir, bundles) = compileFrameworkAndResources(withName: podName)
+      let frameworkDir = compileFrameworkAndResources(withName: podName)
       do {
         // Remove the previously cached framework, if it exists, otherwise the `moveItem` call will
         // fail.
@@ -135,30 +135,12 @@ struct FrameworkBuilder {
         } else if !fileManager.directoryExists(at: cachedFrameworkRoot) {
           // If the root directory doesn't exist, create it so the `moveItem` will succeed.
           try fileManager.createDirectory(at: cachedFrameworkRoot,
-                                          withIntermediateDirectories: true,
-                                          attributes: nil)
+                                          withIntermediateDirectories: true)
         }
 
-        // Move any Resource bundles into the Resources folder. Remove the existing Resources folder
-        // and create a new one.
-        if fileManager.directoryExists(at: cachedResourcesDir) {
-          try fileManager.removeItem(at: cachedResourcesDir)
-        }
-
-        // Create the directory where all the bundles will be kept and copy each one.
-        try fileManager.createDirectory(at: cachedResourcesDir,
-                                        withIntermediateDirectories: true,
-                                        attributes: nil)
-        for bundle in bundles {
-          let destination = cachedResourcesDir.appendingPathComponent(bundle.lastPathComponent)
-          try fileManager.moveItem(at: bundle, to: destination)
-        }
-
-        // Move the newly built framework to the cache directory. NOTE: This needs to happen after
-        // the Resources are moved since the Resources are contained in the frameworkDir.
+        // Move the newly built framework to the cache directory.
         try fileManager.moveItem(at: frameworkDir, to: cachedFrameworkDir)
-
-        return (cachedFrameworkDir, cachedResourcesDir)
+        return cachedFrameworkDir
       } catch {
         fatalError("Could not move built frameworks into the cached frameworks directory: \(error)")
       }
@@ -170,25 +152,53 @@ struct FrameworkBuilder {
   /// This runs a command and immediately returns a Shell result.
   /// NOTE: This exists in conjunction with the `Shell.execute...` due to issues with different
   ///       `.bash_profile` environment variables. This should be consolidated in the future.
-  private func syncExec(command: String, args: [String] = []) -> Shell.Result {
+  private func syncExec(command: String, args: [String] = [], captureOutput: Bool = false) -> Shell.Result {
     let task = Process()
     task.launchPath = command
     task.arguments = args
+
+    // If we want to output to the console, create a readabilityHandler and save each line along the
+    // way. Otherwise, we can just read the pipe at the end. By disabling outputToConsole, some
+    // commands (such as any xcodebuild) can run much, much faster.
+    var output: [String] = []
+    if captureOutput {
+      let pipe = Pipe()
+      task.standardOutput = pipe
+      let outHandle = pipe.fileHandleForReading
+
+      outHandle.readabilityHandler = { pipe in
+        // This will be run any time data is sent to the pipe. We want to print it and store it for
+        // later. Ignore any non-valid Strings.
+        guard let line = String(data: pipe.availableData, encoding: .utf8) else {
+          print("Could not get data from pipe for command \(command): \(pipe.availableData)")
+          return
+        }
+        output.append(line)
+      }
+      // Also set the termination handler on the task in order to stop the readabilityHandler from
+      // parsing any more data from the task.
+      task.terminationHandler = { t in
+        guard let stdOut = t.standardOutput as? Pipe else { return }
+
+        stdOut.fileHandleForReading.readabilityHandler = nil
+      }
+    } else {
+      // No capturing output, just mark it as complete.
+      output = ["The task completed"]
+    }
+
     task.launch()
     task.waitUntilExit()
-//
-//    var pipe = Pipe()
-//    task.standardOutput = pipe
-//    let handle = pipe.fileHandleForReading
+
+    let fullOutput = output.joined(separator: "\n")
 
     // Normally we'd use a pipe to retrieve the output, but for whatever reason it slows things down
     // tremendously for xcodebuild.
-    let output = "The task completed."
     guard task.terminationStatus == 0 else {
-      return .error(code: task.terminationStatus, output: output)
+      return .error(code: task.terminationStatus, output: fullOutput)
     }
 
-    return .success(output: output)
+    return .success(output: fullOutput)
   }
 
   /// Uses `xcodebuild` to build a framework for a specific architecture slice.
@@ -224,7 +234,7 @@ struct FrameworkBuilder {
     let logFileName = "\(framework)-\(arch.rawValue)-\(platform.rawValue).txt"
     let logFile = logRoot.appendingPathComponent(logFileName)
 
-    let result = syncExec(command: "/usr/bin/xcodebuild", args: args)
+    let result = syncExec(command: "/usr/bin/xcodebuild", args: args, captureOutput: true)
     switch result {
     case let .error(code, output):
       // Write output to disk and print the location of it. Force unwrapping here since it's going
@@ -238,6 +248,9 @@ struct FrameworkBuilder {
       // Try to write the output to the log file but if it fails it's not a huge deal since it was
       // a successful build.
       try? output.write(to: logFile, atomically: true, encoding: .utf8)
+      print("""
+      Successfully built \(framework) for \(arch.rawValue). Build log can be found at \(logFile)
+      """)
 
       // Use the Xcode-generated path to return the path to the compiled library.
       let libPath = buildDir.appendingPathComponents(["Release-\(platform.rawValue)",
@@ -288,9 +301,7 @@ struct FrameworkBuilder {
     let dependencies = getModuleDependencies(forFramework: framework)
     let moduleDir = dir.appendingPathComponent("Modules")
     do {
-      try FileManager.default.createDirectory(at: moduleDir,
-                                              withIntermediateDirectories: true,
-                                              attributes: nil)
+      try FileManager.default.createDirectory(at: moduleDir, withIntermediateDirectories: true)
     } catch {
       fatalError("Could not create Modules directory for framework: \(framework). \(error)")
     }
@@ -323,35 +334,32 @@ struct FrameworkBuilder {
   /// This will compile all architectures and use the lipo command to create a "fat" archive.
   ///
   /// - Parameter framework: The name of the framework to be built.
-  /// - Returns: A path to the newly compiled framework and Resource bundles.
-  private func compileFrameworkAndResources(withName framework: String) ->
-    (framework: URL, resourceBundles: [URL]) {
+  /// - Parameter logsOutputDir: The path to the directory to place build logs.
+  /// - Returns: A path to the newly compiled framework (with any included Resources embedded).
+  private func compileFrameworkAndResources(withName framework: String,
+                                            logsOutputDir: URL? = nil) -> URL {
     let fileManager = FileManager.default
-    let outputDir = fileManager.temporaryDirectory(withName: "frameworkBeingBuilt")
-    let logsDir = fileManager.temporaryDirectory(withName: "buildLogs")
+    let outputDir = fileManager.temporaryDirectory(withName: "frameworks_being_built")
+    let logsDir = logsOutputDir ?? fileManager.temporaryDirectory(withName: "build_logs")
     do {
       // Remove the compiled frameworks directory, this isn't the cache we're using.
       if fileManager.directoryExists(at: outputDir) {
         try fileManager.removeItem(at: outputDir)
       }
 
-      try fileManager.createDirectory(at: outputDir,
-                                      withIntermediateDirectories: true,
-                                      attributes: nil)
+      try fileManager.createDirectory(at: outputDir, withIntermediateDirectories: true)
 
       // Create our logs directory if it doesn't exist.
       if !fileManager.directoryExists(at: logsDir) {
-        try fileManager.createDirectory(at: logsDir,
-                                        withIntermediateDirectories: true,
-                                        attributes: nil)
+        try fileManager.createDirectory(at: logsDir, withIntermediateDirectories: true)
       }
     } catch {
       fatalError("Failure creating temporary directory while building \(framework): \(error)")
     }
 
     // Build every architecture and save the locations in an array to be assembled.
-    // TODO: Pass in supported architectures here, for those that don't support individual
-    // architectures (MLKit).
+    // TODO: Pass in supported architectures here, for those open source SDKs that don't support
+    // individual architectures.
     var thinArchives = [URL]()
     for arch in Architecture.allCases {
       let buildDir = projectDir.appendingPathComponent(arch.rawValue)
@@ -365,9 +373,7 @@ struct FrameworkBuilder {
     // Create the framework directory in the filesystem for the thin archives to go.
     let frameworkDir = outputDir.appendingPathComponent("\(framework).framework")
     do {
-      try fileManager.createDirectory(at: frameworkDir,
-                                      withIntermediateDirectories: true,
-                                      attributes: nil)
+      try fileManager.createDirectory(at: frameworkDir, withIntermediateDirectories: true)
     } catch {
       fatalError("Could not create framework directory while building framework \(framework). " +
         "\(error)")
@@ -431,16 +437,15 @@ struct FrameworkBuilder {
                                                           "Release-\(arch.platform.rawValue)",
                                                           framework])
     let resourceDir = frameworkDir.appendingPathComponent("Resources")
-    let bundles: [URL]
     do {
-      bundles = try ResourcesManager.moveAllBundles(inDirectory: contentsDir, to: resourceDir)
+      try ResourcesManager.moveAllBundles(inDirectory: contentsDir, to: resourceDir)
     } catch {
       fatalError("Could not move bundles into Resources directory while building \(framework): " +
         "\(error)")
     }
 
     makeModuleMap(baseDir: outputDir, framework: framework, dir: frameworkDir)
-    return (frameworkDir, bundles)
+    return frameworkDir
   }
 
   /// Recrusively copies headers from the given directory to the destination directory. This does a
@@ -457,9 +462,7 @@ struct FrameworkBuilder {
     let fileManager = FileManager.default
 
     // Create the Headers directory if it doesn't exist.
-    try fileManager.createDirectory(at: destinationDir,
-                                    withIntermediateDirectories: true,
-                                    attributes: nil)
+    try fileManager.createDirectory(at: destinationDir, withIntermediateDirectories: true)
 
     // Get all the header aliases from the CocoaPods directory and get their real path as well as
     // their relative path to the Headers directory they are in. This is needed to preserve proper
@@ -483,12 +486,9 @@ struct FrameworkBuilder {
       // Create the destination folder if it doesn't exist.
       let parentDir = finalPath.deletingLastPathComponent()
       if !fileManager.directoryExists(at: parentDir) {
-        try fileManager.createDirectory(at: parentDir,
-                                        withIntermediateDirectories: true,
-                                        attributes: nil)
+        try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
       }
 
-      print("Attempting to copy \(location) to \(finalPath)")
       try fileManager.copyItem(at: location, to: finalPath)
     }
   }

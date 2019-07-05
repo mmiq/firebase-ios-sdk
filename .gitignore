@@ -79,11 +79,26 @@ Ninja
 /cmake-build-debug
 /cmake-build-release
 
+# Python
+*.pyc
+
 # Visual Studio
 /.vs
+
+# Visual Studio Code
+/.vscode
 
 # CocoaPods generate
 gen/
 
 # b/111916494
 default.profraw
+
+# Firestore emulator
+cloud-firestore-emulator.log
+cloud-firestore-emulator.pid
+
+# Let Gemfiles in CocoaPodsIntegrationTest float to catch issues asap
+CocoaPodsIntegrationTest/**/Gemfile.lock
+CocoaPodsIntegrationTest/Gemfile
+CocoaPodsIntegrationTest/Podfile

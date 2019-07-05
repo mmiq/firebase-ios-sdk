@@ -1,4 +1,32 @@
 # Unreleased
+- [fixed] Fixed an internal assertion that was triggered when an update
+   with a `FieldValue.serverTimestamp()` and an update with a
+  `FieldValue.increment()` were pending for the same document.
+
+# 1.4.1
+- [fixed] Fixed certificate loading for non-CocoaPods builds that may not
+  include bundle identifiers in their frameworks or apps (#3184).
+
+# 1.4.0
+- [feature] Added `clearPersistence()`, which clears the persistent storage
+  including pending writes and cached documents. This is intended to help
+  write reliable tests (https://github.com/firebase/firebase-js-sdk/issues/449).
+
+# 1.3.2
+- [fixed] Firestore should now recover its connection to the server more
+  quickly after being on a network suffering from total packet loss (#2987).
+- [fixed] Changed gRPC-C++ dependency to 0.0.9 which adds support for using it
+  concurrently with the Objective-C gRPC CocoaPod. This fixes certificate
+  errors you might encounter when trying to use Firestore and other Google
+  Cloud Objective-C APIs in the same project.
+
+# 1.3.1
+- [fixed] Disabling garbage collection now avoids even scheduling the
+  collection process. This can be used to prevent crashes in the background when
+  using `NSFileProtectionComplete`. Note that Firestore does not support
+  operating in this mode--nearly all API calls will cause crashes while file
+  protection is enabled. This change just prevents a crash when Firestore is
+  idle (#2846).
 
 # 1.3.0
 - [feature] You can now query across all collections in your database with a

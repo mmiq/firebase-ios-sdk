@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'FirebaseMessaging'
-  s.version          = '3.5.0'
+  s.version          = '4.1.0'
   s.summary          = 'Firebase Messaging for iOS'
 
   s.description      = <<-DESC
@@ -20,6 +20,7 @@ device, and it is completely free.
   }
   s.social_media_url = 'https://twitter.com/Firebase'
   s.ios.deployment_target = '8.0'
+  s.osx.deployment_target = '10.11'
   s.tvos.deployment_target = '10.0'
 
   s.cocoapods_version = '>= 1.4.0'
@@ -38,12 +39,24 @@ device, and it is completely free.
       'FIRMessaging_LIB_VERSION=' + String(s.version)
   }
   s.framework = 'SystemConfiguration'
+  s.weak_framework = 'UserNotifications'
   s.dependency 'FirebaseAnalyticsInterop', '~> 1.1'
   s.dependency 'FirebaseCore', '~> 6.0'
   s.dependency 'FirebaseInstanceID', '~> 4.1'
-  s.dependency 'GoogleUtilities/AppDelegateSwizzler', '~> 6.0'
-  s.dependency 'GoogleUtilities/Reachability', '~> 6.0'
-  s.dependency 'GoogleUtilities/Environment', '~> 6.0'
-  s.dependency 'GoogleUtilities/UserDefaults', '~> 6.0'
+  s.dependency 'GoogleUtilities/AppDelegateSwizzler', '~> 6.2'
+  s.dependency 'GoogleUtilities/Reachability', '~> 6.2'
+  s.dependency 'GoogleUtilities/Environment', '~> 6.2'
+  s.dependency 'GoogleUtilities/UserDefaults', '~> 6.2'
   s.dependency 'Protobuf', '~> 3.1'
+
+  s.test_spec 'unit' do |unit_tests|
+    unit_tests.source_files = 'Example/Messaging/Tests/*.[mh]'
+    unit_tests.requires_app_host = true
+    unit_tests.pod_target_xcconfig = {
+      # Unit tests do library imports using Firebase/Messaging relative paths.
+      'HEADER_SEARCH_PATHS' => '"${PODS_TARGET_SRCROOT}"/Firebase/Messaging',
+      'CLANG_ENABLE_OBJC_WEAK' => 'YES'
+    }
+    unit_tests.dependency 'OCMock'
+  end
 end
